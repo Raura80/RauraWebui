@@ -1,0 +1,3260 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>监控中心</title>
+    <script src="https://cdn.jsdelivr.net/npm/chart.js@4/dist/chart.umd.min.js"></script>
+    <style>
+        /* ===== 设计令牌 ===== */
+        :root {
+            --bg-body: #08080c;
+            --bg-surface: rgba(255, 255, 255, 0.025);
+            --bg-surface-hover: rgba(255, 255, 255, 0.045);
+            --bg-elevated: rgba(255, 255, 255, 0.05);
+            --bg-inset: rgba(0, 0, 0, 0.35);
+            --ring: rgba(255, 255, 255, 0.07);
+            --ring-hover: rgba(255, 255, 255, 0.13);
+            --ink: #e4e4ec;
+            --ink-muted: #a0a0b4;
+            --ink-faint: #64647a;
+            --accent: #10b981;
+            --accent-dim: rgba(16, 185, 129, 0.12);
+            --amber: #f59e0b;
+            --amber-dim: rgba(245, 158, 11, 0.12);
+            --rose: #f43f5e;
+            --rose-dim: rgba(244, 63, 94, 0.12);
+            --blue: #3b82f6;
+            --blue-dim: rgba(59, 130, 246, 0.12);
+            --indigo: #6366f1;
+            --indigo-dim: rgba(99, 102, 241, 0.12);
+            --font-display: 'Geist', -apple-system, BlinkMacSystemFont, 'Segoe UI', system-ui, sans-serif;
+            --font-mono: 'SF Mono', 'Cascadia Code', 'Consolas', monospace;
+            --ease-out: cubic-bezier(0.32, 0.72, 0, 1);
+            --radius-sm: 8px;
+            --radius-md: 12px;
+            --radius-lg: 16px;
+
+            /* 字体层级：5级，1.2倍递减 */
+            --text-xl: 24px;
+            /* 一级：核心数值（指标数字、API计数） */
+            --text-lg: 15px;
+            /* 二级：标题（卡片标题、图表标题、导航标题） */
+            --text-md: 13px;
+            /* 三级：正文（表格内容、标签、描述、统计值） */
+            --text-sm: 11px;
+            /* 四级：辅助（表头、徽标、时间戳、ID标签） */
+            --text-xs: 10px;
+            /* 五级：微型标注（单位标签） */
+        }
+
+        /* ===== 重置 ===== */
+        *,
+        *::before,
+        *::after {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+
+        body {
+            font-family: var(--font-display);
+            background: var(--bg-body);
+            color: var(--ink);
+            min-height: 100dvh;
+            line-height: 1.5;
+            -webkit-font-smoothing: antialiased;
+            overflow-x: hidden;
+        }
+
+        /* ===== 焦点样式 ===== */
+        :focus-visible {
+            outline: 2px solid var(--accent);
+            outline-offset: 2px;
+            border-radius: 4px;
+        }
+
+        /* ===== 浮动导航 ===== */
+        .nav-float {
+            position: sticky;
+            top: 16px;
+            z-index: 50;
+            margin: 16px auto 0;
+            max-width: 1440px;
+            width: calc(100% - 48px);
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            padding: 10px 20px;
+            background: rgba(255, 255, 255, 0.05);
+            border: 1px solid var(--ring);
+            border-radius: var(--radius-lg);
+            backdrop-filter: blur(12px);
+        }
+
+        .nav-left {
+            display: flex;
+            align-items: center;
+            gap: 12px;
+        }
+
+        .status-dot {
+            width: 8px;
+            height: 8px;
+            border-radius: 50%;
+            background: var(--accent);
+            box-shadow: 0 0 6px rgba(16, 185, 129, 0.4);
+            animation: pulse-glow 2s ease-in-out infinite;
+        }
+
+        .status-dot.offline {
+            background: var(--rose);
+            box-shadow: 0 0 6px rgba(244, 63, 94, 0.4);
+            animation: none;
+        }
+
+        @keyframes pulse-glow {
+
+            0%,
+            100% {
+                opacity: 1;
+            }
+
+            50% {
+                opacity: 0.4;
+            }
+        }
+
+        .nav-title {
+            font-size: var(--text-lg);
+            font-weight: 700;
+            letter-spacing: -0.01em;
+            color: var(--ink);
+        }
+
+        .nav-right {
+            display: flex;
+            align-items: center;
+            gap: 8px;
+        }
+
+        .nav-pill {
+            display: flex;
+            align-items: center;
+            gap: 6px;
+            padding: 5px 12px;
+            background: var(--bg-elevated);
+            border-radius: 9999px;
+            font-size: var(--text-md);
+            font-weight: 500;
+            color: var(--ink-muted);
+            font-family: var(--font-mono);
+        }
+
+        .nav-pill .val {
+            color: var(--accent);
+            font-weight: 600;
+        }
+
+        .nav-pill.amber .val {
+            color: var(--amber);
+        }
+
+        /* ===== 断连提示 ===== */
+        .disconnect-banner {
+            position: sticky;
+            top: 68px;
+            z-index: 49;
+            max-width: 1440px;
+            margin: 8px auto 0;
+            width: calc(100% - 48px);
+            padding: 8px 16px;
+            background: var(--rose-dim);
+            border: 1px solid rgba(244, 63, 94, 0.25);
+            border-radius: 10px;
+            color: var(--rose);
+            font-size: var(--text-md);
+            font-weight: 500;
+            text-align: center;
+        }
+
+        /* ===== 主容器 ===== */
+        .main {
+            position: relative;
+            z-index: 1;
+            max-width: 1440px;
+            margin: 0 auto;
+            padding: 28px 24px 48px;
+        }
+
+        /* ===== Bento Grid ===== */
+        .bento {
+            display: grid;
+            grid-template-columns: repeat(12, 1fr);
+            gap: 14px;
+        }
+
+        /* ===== Grid 列宽工具类 ===== */
+        .col-3 {
+            grid-column: span 3;
+        }
+
+        .col-4 {
+            grid-column: span 4;
+        }
+
+        .col-5 {
+            grid-column: span 5;
+        }
+
+        .col-7 {
+            grid-column: span 7;
+        }
+
+        .col-8 {
+            grid-column: span 8;
+        }
+
+        .col-12 {
+            grid-column: span 12;
+        }
+
+        /* ===== 卡片 ===== */
+        .card {
+            background: var(--bg-surface);
+            border: 1px solid var(--ring);
+            border-radius: var(--radius-md);
+            padding: 18px;
+            transition: border-color 0.4s var(--ease-out);
+            height: 100%;
+            display: flex;
+            flex-direction: column;
+        }
+
+        .card:hover {
+            border-color: var(--ring-hover);
+        }
+
+        /* 当前任务卡片：运行中时背景高亮 */
+        .card.task-card.has-task {
+            background: var(--accent-dim);
+            border-color: rgba(16, 185, 129, 0.2);
+        }
+
+        /* 短卡片不随同行高卡片拉伸 */
+        .card--self-start {
+            align-self: start;
+        }
+
+        /* ===== 卡片头部 ===== */
+        .card-head {
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            margin-bottom: 14px;
+        }
+
+        .card-title {
+            font-size: var(--text-lg);
+            font-weight: 600;
+            color: var(--ink-muted);
+            letter-spacing: 0.01em;
+        }
+
+        .card-badge {
+            display: inline-flex;
+            align-items: center;
+            gap: 4px;
+            padding: 3px 10px;
+            border-radius: 9999px;
+            font-size: var(--text-sm);
+            font-weight: 600;
+            font-family: var(--font-mono);
+        }
+
+        .badge-green {
+            background: var(--accent-dim);
+            color: var(--accent);
+        }
+
+        .badge-amber {
+            background: var(--amber-dim);
+            color: var(--amber);
+        }
+
+        .badge-rose {
+            background: var(--rose-dim);
+            color: var(--rose);
+        }
+
+        .badge-blue {
+            background: var(--blue-dim);
+            color: var(--blue);
+        }
+
+        .badge-indigo {
+            background: var(--indigo-dim);
+            color: var(--indigo);
+        }
+
+        /* ===== 核心指标卡片 ===== */
+        .metric-grid {
+            display: contents;
+        }
+
+        .metric-card {
+            flex-direction: row;
+            align-items: center;
+            gap: 14px;
+        }
+
+        .metric-icon {
+            width: 36px;
+            height: 36px;
+            border-radius: 10px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            flex-shrink: 0;
+        }
+
+        .metric-icon svg {
+            width: 16px;
+            height: 16px;
+            stroke-width: 1.5;
+        }
+
+        .metric-icon.green {
+            background: var(--accent-dim);
+            color: var(--accent);
+        }
+
+        .metric-icon.amber {
+            background: var(--amber-dim);
+            color: var(--amber);
+        }
+
+        .metric-icon.blue {
+            background: var(--blue-dim);
+            color: var(--blue);
+        }
+
+        .metric-icon.indigo {
+            background: var(--indigo-dim);
+            color: var(--indigo);
+        }
+
+        .metric-body {
+            flex: 1;
+            min-width: 0;
+        }
+
+        .metric-label {
+            font-size: var(--text-md);
+            color: var(--ink-faint);
+            font-weight: 500;
+            margin-bottom: 2px;
+        }
+
+        .metric-value {
+            font-family: var(--font-mono);
+            font-size: var(--text-xl);
+            font-weight: 700;
+            letter-spacing: -0.02em;
+            color: var(--ink);
+            line-height: 1.2;
+        }
+
+        /* ===== 图表区 ===== */
+        .chart-header {
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            margin-bottom: 12px;
+            flex-wrap: wrap;
+            gap: 8px;
+        }
+
+        .chart-title {
+            font-size: var(--text-lg);
+            font-weight: 600;
+            color: var(--ink);
+        }
+
+        .chart-stats {
+            display: flex;
+            gap: 16px;
+        }
+
+        .chart-stat {
+            text-align: right;
+        }
+
+        .chart-stat-label {
+            font-size: var(--text-sm);
+            color: var(--ink-faint);
+            text-transform: uppercase;
+            letter-spacing: 0.05em;
+        }
+
+        .chart-stat-value {
+            font-family: var(--font-mono);
+            font-size: var(--text-lg);
+            font-weight: 600;
+        }
+
+        .chart-stat-value.c-accent {
+            color: var(--accent);
+        }
+
+        .chart-stat-value.c-amber {
+            color: var(--amber);
+        }
+
+        .chart-stat-value.c-rose {
+            color: var(--rose);
+        }
+
+        .chart-wrap {
+            flex: 1;
+            min-height: 100px;
+            position: relative;
+        }
+
+        /* ===== 当前任务 ===== */
+        .task-active-indicator {
+            display: flex;
+            align-items: center;
+            gap: 8px;
+            margin-bottom: 14px;
+        }
+
+        .task-active-dot {
+            width: 6px;
+            height: 6px;
+            border-radius: 50%;
+            background: var(--accent);
+            animation: pulse-glow 1.5s ease-in-out infinite;
+        }
+
+        .task-active-label {
+            font-size: var(--text-sm);
+            font-weight: 600;
+            color: var(--accent);
+            text-transform: uppercase;
+            letter-spacing: 0.06em;
+        }
+
+        .task-field {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            padding: 9px 12px;
+            background: var(--bg-inset);
+            border-radius: var(--radius-sm);
+            margin-bottom: 5px;
+            font-size: var(--text-md);
+        }
+
+        .task-field .label {
+            color: var(--ink-faint);
+            font-weight: 500;
+            flex-shrink: 0;
+            font-size: var(--text-md);
+        }
+
+        .task-field .value {
+            color: var(--ink);
+            font-family: var(--font-mono);
+            font-weight: 500;
+            text-align: right;
+            max-width: 60%;
+            overflow: hidden;
+            text-overflow: ellipsis;
+            white-space: nowrap;
+            font-size: var(--text-md);
+        }
+
+        .task-empty {
+            color: var(--ink-faint);
+            font-size: var(--text-md);
+            text-align: center;
+            padding: 28px 0;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            gap: 8px;
+        }
+
+        .task-empty::before {
+            content: "";
+            width: 28px;
+            height: 28px;
+            border-radius: 50%;
+            background: var(--bg-inset);
+            display: block;
+        }
+
+        /* ===== 通用表格样式 ===== */
+        .data-table {
+            width: 100%;
+            border-collapse: collapse;
+            font-size: var(--text-md);
+        }
+
+        .data-table th {
+            color: var(--ink-faint);
+            font-weight: 600;
+            text-align: left;
+            padding: 8px 10px;
+            border-bottom: 1px solid var(--ring);
+            font-size: var(--text-sm);
+            text-transform: uppercase;
+            letter-spacing: 0.06em;
+        }
+
+        .data-table td {
+            padding: 9px 10px;
+            border-bottom: none;
+            color: var(--ink-muted);
+            font-family: var(--font-mono);
+            font-size: var(--text-md);
+        }
+
+        .data-table tbody tr:nth-child(3n) td {
+            border-bottom: 1px solid rgba(255, 255, 255, 0.05);
+        }
+
+        .data-table tbody tr:last-child td {
+            border-bottom: none;
+        }
+
+        .data-table tr:hover td {
+            background: rgba(255, 255, 255, 0.02);
+        }
+
+        .table-empty {
+            color: var(--ink-faint);
+            text-align: center;
+            padding: 24px;
+            font-size: var(--text-md);
+        }
+
+        /* ===== 排队表格特殊列 ===== */
+        .cell-id {
+            color: var(--ink);
+            font-weight: 500;
+        }
+
+        .cell-model {
+            color: var(--accent);
+        }
+
+        .cell-prompt {
+            max-width: 140px;
+            overflow: hidden;
+            text-overflow: ellipsis;
+            white-space: nowrap;
+            color: var(--ink-faint);
+        }
+
+        /* ===== 用户ID标签 ===== */
+        .uid-tag {
+            display: inline-flex;
+            align-items: center;
+            gap: 3px;
+            padding: 2px 7px;
+            background: var(--indigo-dim);
+            border-radius: 4px;
+            color: var(--indigo);
+            font-family: var(--font-mono);
+            font-size: var(--text-sm);
+            font-weight: 600;
+        }
+
+        /* ===== 模型排行条形图 ===== */
+        .bar-list {
+            display: flex;
+            flex-direction: column;
+            gap: 7px;
+            max-height: 320px;
+            overflow-y: auto;
+        }
+
+        .bar-item {
+            display: flex;
+            align-items: center;
+            gap: 10px;
+        }
+
+        .bar-name {
+            font-size: var(--text-md);
+            font-weight: 500;
+            color: var(--ink-muted);
+            min-width: 96px;
+            max-width: 96px;
+            overflow: hidden;
+            text-overflow: ellipsis;
+            white-space: nowrap;
+            flex-shrink: 0;
+        }
+
+        .bar-track {
+            flex: 1;
+            height: 5px;
+            background: var(--bg-inset);
+            border-radius: 3px;
+            overflow: hidden;
+        }
+
+        .bar-fill {
+            height: 100%;
+            border-radius: 3px;
+            background: linear-gradient(90deg, var(--accent), rgba(16, 185, 129, 0.4));
+            transform-origin: left;
+            transition: transform 0.8s var(--ease-out);
+        }
+
+        .bar-count {
+            font-family: var(--font-mono);
+            font-size: var(--text-md);
+            font-weight: 600;
+            color: var(--ink);
+            min-width: 36px;
+            text-align: right;
+        }
+
+
+        /* ===== 状态标签（统一尺寸，颜色变体） ===== */
+        .status-tag {
+            display: inline-block;
+            border-radius: 9999px;
+            font-weight: 600;
+        }
+
+        .status-tag.sz-sm {
+            padding: 1px 6px;
+            font-size: 10px;
+        }
+
+        .status-tag.sz-md {
+            padding: 2px 8px;
+            font-size: var(--text-sm);
+        }
+
+        .status-tag.completed,
+        .status-tag.active {
+            background: var(--accent-dim);
+            color: var(--accent);
+        }
+
+        .status-tag.failed,
+        .status-tag.disabled {
+            background: var(--rose-dim);
+            color: var(--rose);
+        }
+
+        .status-tag.cancelled {
+            background: var(--amber-dim);
+            color: var(--amber);
+        }
+
+        .status-tag.pending {
+            background: var(--blue-dim);
+            color: var(--blue);
+        }
+
+        .status-tag.expired {
+            background: var(--amber-dim);
+            color: var(--amber);
+        }
+
+        .status-tag.exhausted {
+            background: var(--ink-dim, rgba(148, 163, 184, 0.15));
+            color: var(--ink-muted, #94a3b8);
+        }
+
+        /* ===== 用户栏 ===== */
+        .user-list {
+            display: flex;
+            flex-direction: column;
+            gap: 0;
+        }
+
+        /* 用户列表表头 */
+        .user-header {
+            display: grid;
+            grid-template-columns: 36px 2fr 1fr 1fr 1fr 1fr 1fr 1.5fr;
+            align-items: center;
+            gap: 6px;
+            padding: 6px 10px;
+            font-size: var(--text-sm);
+            color: var(--ink-faint);
+            text-transform: uppercase;
+            letter-spacing: 0.06em;
+            font-weight: 600;
+            border-bottom: 1px solid var(--ring);
+        }
+
+        .user-row {
+            display: grid;
+            grid-template-columns: 36px 2fr 1fr 1fr 1fr 1fr 1fr 1.5fr;
+            align-items: center;
+            gap: 6px;
+            padding: 7px 10px;
+            border-radius: var(--radius-sm);
+            transition: background 0.2s;
+        }
+
+        .user-row:hover {
+            background: rgba(255, 255, 255, 0.025);
+        }
+
+        .user-row+.user-row {
+            border-top: 1px solid rgba(255, 255, 255, 0.04);
+        }
+
+        .user-id-badge {
+            width: 26px;
+            height: 26px;
+            border-radius: 6px;
+            background: var(--indigo-dim);
+            color: var(--indigo);
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-family: var(--font-mono);
+            font-size: var(--text-sm);
+            font-weight: 700;
+        }
+
+        .user-info {
+            min-width: 0;
+            display: flex;
+            align-items: center;
+            gap: 6px;
+        }
+
+        /* 在线状态小圆点 */
+        .user-online-dot {
+            width: 6px;
+            height: 6px;
+            border-radius: 50%;
+            background: var(--ink-faint);
+            flex-shrink: 0;
+        }
+
+        .user-online-dot.online {
+            background: var(--accent);
+            box-shadow: 0 0 4px rgba(16, 185, 129, 0.4);
+        }
+
+        .user-cid {
+            font-family: var(--font-mono);
+            font-size: var(--text-sm);
+            color: var(--ink-muted);
+            overflow: hidden;
+            text-overflow: ellipsis;
+            white-space: nowrap;
+        }
+
+        .user-stat {
+            text-align: right;
+        }
+
+        .user-stat-val {
+            font-family: var(--font-mono);
+            font-size: var(--text-md);
+            font-weight: 600;
+            color: var(--ink);
+        }
+
+        .user-stat-label {
+            font-size: var(--text-xs);
+            color: var(--ink-faint);
+            text-transform: uppercase;
+            letter-spacing: 0.04em;
+        }
+
+        .user-time {
+            text-align: right;
+            font-family: var(--font-mono);
+            font-size: var(--text-sm);
+            color: var(--ink-faint);
+        }
+
+        /* ===== 系统日志 ===== */
+        .logs-scroll {
+            flex: 1;
+            min-height: 200px;
+            max-height: 300px;
+            overflow-y: auto;
+            background: var(--bg-inset);
+            border-radius: var(--radius-sm);
+            padding: 12px;
+            font-family: var(--font-mono);
+            font-size: var(--text-sm);
+            line-height: 1.6;
+        }
+
+        .log-line {
+            display: flex;
+            gap: 8px;
+            padding: 3px 0;
+            align-items: baseline;
+        }
+
+        .log-ts {
+            color: var(--ink-faint);
+            flex-shrink: 0;
+            font-size: var(--text-sm);
+        }
+
+        .log-tag {
+            flex-shrink: 0;
+            font-size: 11px;
+            font-weight: 600;
+            padding: 1px 6px;
+            border-radius: 9999px;
+            letter-spacing: 0.03em;
+        }
+
+        .log-tag.user {
+            background: rgba(46, 204, 113, 0.15);
+            color: #2ecc71;
+        }
+
+        .log-tag.system {
+            background: rgba(52, 152, 219, 0.15);
+            color: #3498db;
+        }
+
+        .log-tag.error {
+            background: rgba(231, 76, 60, 0.15);
+            color: #e74c3c;
+        }
+
+        .log-msg {
+            color: var(--ink-muted);
+            word-break: break-all;
+        }
+
+        .log-msg.user {
+            color: var(--accent);
+        }
+
+        .log-msg.system {
+            color: #5dade2;
+        }
+
+        .log-msg.error {
+            color: var(--rose);
+        }
+
+        /* ===== 入场动画 ===== */
+        .reveal {
+            opacity: 0;
+            transform: translateY(14px);
+            transition: opacity 0.6s var(--ease-out), transform 0.6s var(--ease-out);
+        }
+
+        .reveal.visible {
+            opacity: 1;
+            transform: translateY(0);
+        }
+
+        @media (prefers-reduced-motion: reduce) {
+            .reveal {
+                opacity: 1;
+                transform: none;
+                transition: none;
+            }
+
+            .status-dot,
+            .task-active-dot {
+                animation: none;
+            }
+        }
+
+        /* ===== 响应式 ===== */
+        @media (max-width: 1024px) {
+            .col-3 {
+                grid-column: span 6;
+            }
+
+            .col-4 {
+                grid-column: span 6;
+            }
+
+            .col-5 {
+                grid-column: span 5;
+            }
+
+            .col-7 {
+                grid-column: span 7;
+            }
+
+            .col-8 {
+                grid-column: span 12;
+            }
+        }
+
+        @media (max-width: 768px) {
+            .nav-float {
+                width: calc(100% - 24px);
+                top: 8px;
+                margin-top: 8px;
+                padding: 8px 14px;
+            }
+
+            .nav-right {
+                gap: 4px;
+            }
+
+            .nav-pill {
+                padding: 4px 8px;
+                font-size: var(--text-sm);
+            }
+
+            .main {
+                padding: 20px 12px 32px;
+            }
+
+            /* 所有卡片满宽 */
+            .col-3,
+            .col-4,
+            .col-5,
+            .col-7,
+            .col-8 {
+                grid-column: span 12;
+            }
+
+            .metric-value {
+                font-size: var(--text-lg);
+            }
+
+            .chart-stats {
+                gap: 10px;
+            }
+        }
+
+        @media (max-width: 640px) {
+            .nav-left {
+                gap: 8px;
+            }
+
+            .nav-title {
+                font-size: var(--text-md);
+            }
+
+            /* 指标卡片2列排列 */
+            .col-3,
+            .col-4 {
+                grid-column: span 6;
+            }
+
+            .user-row {
+                grid-template-columns: 36px 2fr 1fr 1fr;
+            }
+
+            .user-header {
+                grid-template-columns: 36px 2fr 1fr 1fr;
+            }
+
+            /* 移动端隐藏消耗、搜索、预设、时间列 */
+            .user-row>:nth-child(4),
+            .user-row>:nth-child(6),
+            .user-row>:nth-child(7),
+            .user-row>:nth-child(8),
+            .user-header>:nth-child(4),
+            .user-header>:nth-child(6),
+            .user-header>:nth-child(7),
+            .user-header>:nth-child(8) {
+                display: none;
+            }
+
+            .bar-name {
+                min-width: 72px;
+                max-width: 72px;
+            }
+
+            .data-table th,
+            .data-table td {
+                padding: 6px 6px;
+                font-size: var(--text-sm);
+            }
+        }
+
+        /* ===== 自定义滚动条 ===== */
+        .custom-scroll::-webkit-scrollbar {
+            width: 5px;
+            height: 5px;
+        }
+
+        .custom-scroll::-webkit-scrollbar-track {
+            background: transparent;
+        }
+
+        .custom-scroll::-webkit-scrollbar-thumb {
+            background: rgba(255, 255, 255, 0.08);
+            border-radius: 3px;
+        }
+
+        .custom-scroll::-webkit-scrollbar-thumb:hover {
+            background: rgba(255, 255, 255, 0.15);
+        }
+
+        .custom-scroll {
+            scrollbar-width: thin;
+            scrollbar-color: rgba(255, 255, 255, 0.08) transparent;
+        }
+
+        /* ===== 管理按钮 ===== */
+        .admin-btn {
+            position: absolute;
+            top: 12px;
+            right: 12px;
+            width: 32px;
+            height: 32px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            background: var(--bg-inset);
+            border: 1px solid rgba(255, 255, 255, 0.06);
+            border-radius: 8px;
+            color: var(--ink-faint);
+            cursor: pointer;
+            transition: all 0.2s;
+            padding: 0;
+        }
+
+        .admin-btn:hover {
+            color: var(--accent);
+            border-color: var(--accent);
+            background: rgba(16, 185, 129, 0.08);
+        }
+
+        /* ===== 管理面板模态窗口 ===== */
+        .admin-overlay {
+            position: fixed;
+            inset: 0;
+            background: rgba(0, 0, 0, 0.7);
+            backdrop-filter: blur(4px);
+            z-index: 1000;
+            display: none;
+            align-items: center;
+            justify-content: center;
+        }
+
+        .admin-overlay.open {
+            display: flex;
+        }
+
+        .admin-modal {
+            width: 92%;
+            max-width: 960px;
+            height: 82vh;
+            max-height: 820px;
+            min-height: 400px;
+            background: var(--bg-body);
+            border: 1px solid rgba(255, 255, 255, 0.08);
+            border-radius: 12px;
+            display: flex;
+            flex-direction: column;
+            overflow: hidden;
+            box-shadow: 0 24px 80px rgba(0, 0, 0, 0.5);
+        }
+
+        @media (max-height: 700px) {
+            .admin-modal {
+                height: 95vh;
+                max-height: none;
+            }
+        }
+
+        @media (max-width: 768px) {
+            .admin-modal {
+                width: 98%;
+                height: 95vh;
+                max-height: none;
+            }
+        }
+
+        .admin-header {
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            padding: 16px 20px;
+            border-bottom: 1px solid rgba(255, 255, 255, 0.06);
+            flex-shrink: 0;
+        }
+
+        .admin-header h2 {
+            font-size: 16px;
+            font-weight: 600;
+            color: var(--ink);
+            margin: 0;
+        }
+
+        .admin-close {
+            width: 28px;
+            height: 28px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            background: none;
+            border: none;
+            color: var(--ink-faint);
+            cursor: pointer;
+            border-radius: 6px;
+            transition: all 0.15s;
+            font-size: 18px;
+        }
+
+        .admin-close:hover {
+            color: var(--ink);
+            background: var(--bg-inset);
+        }
+
+        /* API Key 输入 */
+        .admin-apikey-bar {
+            display: flex;
+            align-items: center;
+            gap: 10px;
+            padding: 12px 20px;
+            border-bottom: 1px solid rgba(255, 255, 255, 0.06);
+            flex-shrink: 0;
+        }
+
+        .admin-apikey-bar label {
+            font-size: 12px;
+            color: var(--ink-faint);
+            white-space: nowrap;
+        }
+
+        .admin-apikey-bar input {
+            flex: 1;
+            padding: 6px 10px;
+            background: var(--bg-inset);
+            border: 1px solid rgba(255, 255, 255, 0.08);
+            border-radius: 6px;
+            color: var(--ink);
+            font-family: var(--font-mono);
+            font-size: 12px;
+            outline: none;
+        }
+
+        .admin-apikey-bar input:focus {
+            border-color: var(--accent);
+        }
+
+        /* Tab 切换 */
+        .admin-tabs {
+            display: flex;
+            border-bottom: 1px solid rgba(255, 255, 255, 0.06);
+            flex-shrink: 0;
+        }
+
+        .admin-tab {
+            padding: 10px 20px;
+            font-size: 13px;
+            font-weight: 500;
+            color: var(--ink-faint);
+            background: none;
+            border: none;
+            cursor: pointer;
+            border-bottom: 2px solid transparent;
+            transition: all 0.15s;
+        }
+
+        .admin-tab:hover {
+            color: var(--ink-muted);
+        }
+
+        .admin-tab.active {
+            color: var(--accent);
+            border-bottom-color: var(--accent);
+        }
+
+        /* Tab 面板 */
+        .admin-body {
+            flex: 1;
+            display: flex;
+            width: 100%;
+            overflow: hidden;
+            min-height: 0;
+        }
+
+        .admin-panel {
+            display: none;
+            flex-direction: column;
+            flex: 1;
+            width: 100%;
+            min-height: 0;
+        }
+
+        .admin-panel.active {
+            display: flex;
+        }
+
+        .admin-panel .panel-toolbar {
+            flex-shrink: 0;
+            padding: 10px 20px 6px;
+        }
+
+        .admin-panel .panel-table-wrap {
+            flex: 1;
+            overflow-y: auto;
+            min-height: 0;
+            padding: 0 20px;
+        }
+
+        /* 通用表格 */
+        .admin-table {
+            width: 100%;
+            border-collapse: collapse;
+            font-size: 12px;
+            table-layout: fixed;
+        }
+
+        .admin-table th {
+            text-align: left;
+            padding: 5px 6px;
+            color: var(--ink-faint);
+            font-weight: 500;
+            border-bottom: 1px solid rgba(255, 255, 255, 0.06);
+        }
+
+        .admin-table th.cell-truncate {
+            overflow: hidden;
+            text-overflow: ellipsis;
+            white-space: nowrap;
+            max-width: 0;
+        }
+
+        .admin-table td {
+            padding: 4px 6px;
+            color: var(--ink-muted);
+            border-bottom: 1px solid rgba(255, 255, 255, 0.03);
+            vertical-align: middle;
+        }
+
+        .admin-table td.cell-truncate {
+            overflow: hidden;
+            text-overflow: ellipsis;
+            white-space: nowrap;
+            max-width: 0;
+        }
+
+        .admin-table tr:hover td {
+            background: rgba(255, 255, 255, 0.02);
+        }
+
+        .admin-table .mono {
+            font-family: var(--font-mono);
+            font-size: 11px;
+        }
+
+        /* 兑换码管理表格列宽 — 10列 */
+        .token-table th,
+        .token-table td {
+            text-align: center;
+        }
+
+        .token-table th:nth-child(1),
+        .token-table td:nth-child(1) {
+            width: 16%;
+            text-align: left;
+        }
+
+        .token-table th:nth-child(2),
+        .token-table td:nth-child(2) {
+            width: 6%;
+        }
+
+        .token-table th:nth-child(3),
+        .token-table td:nth-child(3) {
+            width: 6%;
+        }
+
+        .token-table th:nth-child(4),
+        .token-table td:nth-child(4) {
+            width: 9%;
+        }
+
+        .token-table th:nth-child(5),
+        .token-table td:nth-child(5) {
+            width: 8%;
+        }
+
+        .token-table th:nth-child(6),
+        .token-table td:nth-child(6) {
+            width: 6%;
+        }
+
+        .token-table th:nth-child(7),
+        .token-table td:nth-child(7) {
+            width: 15%;
+        }
+
+        .token-table th:nth-child(8),
+        .token-table td:nth-child(8) {
+            width: 10%;
+        }
+
+        .token-table th:nth-child(9),
+        .token-table td:nth-child(9) {
+            width: 10%;
+        }
+
+        .token-table th:nth-child(10),
+        .token-table td:nth-child(10) {
+            width: 12%;
+        }
+
+        /* 兑换记录表格列宽 — 7列 */
+        .redeem-table th,
+        .redeem-table td {
+            text-align: center;
+        }
+
+        .redeem-table th:nth-child(1),
+        .redeem-table td:nth-child(1) {
+            width: 16%;
+            text-align: left;
+        }
+
+        .redeem-table th:nth-child(2),
+        .redeem-table td:nth-child(2) {
+            width: 14%;
+        }
+
+        .redeem-table th:nth-child(3),
+        .redeem-table td:nth-child(3) {
+            width: 8%;
+        }
+
+        .redeem-table th:nth-child(4),
+        .redeem-table td:nth-child(4) {
+            width: 9%;
+        }
+
+        .redeem-table th:nth-child(5),
+        .redeem-table td:nth-child(5) {
+            width: 8%;
+        }
+
+        .redeem-table th:nth-child(6),
+        .redeem-table td:nth-child(6) {
+            width: 9%;
+        }
+
+        .redeem-table th:nth-child(7),
+        .redeem-table td:nth-child(7) {
+            width: auto;
+        }
+
+        /* 批次列表表格列宽 */
+        .batch-table th:nth-child(1),
+        .batch-table td:nth-child(1) {
+            width: 18%;
+        }
+
+        .batch-table th:nth-child(2),
+        .batch-table td:nth-child(2) {
+            width: auto;
+        }
+
+        .batch-table th:nth-child(3),
+        .batch-table td:nth-child(3) {
+            width: 8%;
+            text-align: center;
+        }
+
+        .batch-table th:nth-child(4),
+        .batch-table td:nth-child(4) {
+            width: 8%;
+            text-align: center;
+        }
+
+        .batch-table th:nth-child(5),
+        .batch-table td:nth-child(5) {
+            width: 8%;
+            text-align: center;
+        }
+
+        .batch-table th:nth-child(6),
+        .batch-table td:nth-child(6) {
+            width: 10%;
+            text-align: center;
+        }
+
+        .batch-table th:nth-child(7),
+        .batch-table td:nth-child(7) {
+            width: 10%;
+        }
+
+        /* 操作按钮 */
+        .admin-action-btn {
+            padding: 2px 6px;
+            font-size: 10px;
+            border-radius: 3px;
+            border: 1px solid rgba(255, 255, 255, 0.08);
+            background: var(--bg-inset);
+            color: var(--ink-faint);
+            cursor: pointer;
+            transition: all 0.15s;
+        }
+
+        .admin-action-btn:hover {
+            border-color: var(--accent);
+            color: var(--accent);
+        }
+
+        .admin-action-btn.danger:hover {
+            border-color: var(--rose);
+            color: var(--rose);
+        }
+
+        /* 排序列头 */
+        .admin-table th.sortable {
+            cursor: pointer;
+            user-select: none;
+            transition: color 0.15s;
+        }
+
+        .admin-table th.sortable:hover {
+            color: var(--ink-muted);
+        }
+
+        .admin-table th.sortable .sort-arrow {
+            display: inline-block;
+            margin-left: 3px;
+            font-size: 9px;
+            opacity: 0.3;
+            vertical-align: middle;
+        }
+
+        .admin-table th.sortable.sort-asc .sort-arrow,
+        .admin-table th.sortable.sort-desc .sort-arrow {
+            opacity: 1;
+            color: var(--accent);
+        }
+
+        /* 瀑布流加载指示器 */
+        .scroll-loader {
+            text-align: center;
+            padding: 10px 0;
+            color: var(--ink-faint);
+            font-size: 11px;
+            display: none;
+        }
+
+        .scroll-loader.show {
+            display: block;
+        }
+
+        .scroll-loader .spinner {
+            display: inline-block;
+            width: 14px;
+            height: 14px;
+            border: 2px solid rgba(255, 255, 255, 0.1);
+            border-top-color: var(--accent);
+            border-radius: 50%;
+            animation: spin 0.6s linear infinite;
+            vertical-align: middle;
+            margin-right: 6px;
+        }
+
+        @keyframes spin {
+            to {
+                transform: rotate(360deg);
+            }
+        }
+
+        /* 搜索/筛选栏 */
+        .admin-toolbar {
+            display: flex;
+            align-items: center;
+            gap: 8px;
+            margin-bottom: 8px;
+            flex-wrap: wrap;
+        }
+
+        .admin-toolbar input,
+        .admin-toolbar select {
+            padding: 4px 8px;
+            background: var(--bg-inset);
+            border: 1px solid rgba(255, 255, 255, 0.08);
+            border-radius: 4px;
+            color: var(--ink);
+            font-size: 11px;
+            outline: none;
+            height: 26px;
+        }
+
+        .admin-toolbar input:focus,
+        .admin-toolbar select:focus {
+            border-color: var(--accent);
+        }
+
+        /* 批量生成表单 */
+        .admin-form {
+            display: grid;
+            grid-template-columns: 1fr 1fr 1fr;
+            gap: 12px 16px;
+        }
+
+        .admin-form .full {
+            grid-column: span 3;
+        }
+
+        .admin-form label {
+            display: block;
+            font-size: 12px;
+            color: var(--ink-faint);
+            margin-bottom: 4px;
+        }
+
+        .admin-form input,
+        .admin-form select {
+            width: 100%;
+            padding: 8px 10px;
+            background: var(--bg-inset);
+            border: 1px solid rgba(255, 255, 255, 0.08);
+            border-radius: 6px;
+            color: var(--ink);
+            font-size: 13px;
+            outline: none;
+        }
+
+        .admin-form input:focus,
+        .admin-form select:focus {
+            border-color: var(--accent);
+        }
+
+        .admin-form .submit-btn {
+            padding: 8px 20px;
+            background: var(--accent);
+            color: #000;
+            border: none;
+            border-radius: 6px;
+            font-weight: 600;
+            font-size: 13px;
+            cursor: pointer;
+            transition: opacity 0.15s;
+        }
+
+        .admin-form .submit-btn:hover {
+            opacity: 0.85;
+        }
+
+        /* 行内编辑 */
+        .admin-table td input,
+        .admin-table td select {
+            padding: 2px 4px;
+            background: var(--bg-inset);
+            border: 1px solid rgba(255, 255, 255, 0.1);
+            border-radius: 3px;
+            color: var(--ink);
+            font-size: 11px;
+            outline: none;
+            width: 100%;
+            height: 22px;
+        }
+
+        .admin-table td input:focus,
+        .admin-table td select:focus {
+            border-color: var(--accent);
+        }
+
+        .edit-row td {
+            background: var(--accent-dim) !important;
+        }
+
+        .edit-row .admin-action-btn {
+            padding: 2px 6px;
+            font-size: 10px;
+        }
+
+        /* Toast 提示 */
+        .admin-toast {
+            position: fixed;
+            top: 20px;
+            right: 20px;
+            z-index: 2000;
+            padding: 10px 18px;
+            border-radius: 8px;
+            font-size: 13px;
+            font-weight: 500;
+            opacity: 0;
+            transform: translateY(-10px);
+            transition: all 0.3s;
+            pointer-events: none;
+        }
+
+        .admin-toast.show {
+            opacity: 1;
+            transform: translateY(0);
+        }
+
+        .admin-toast.success {
+            background: var(--accent-dim);
+            color: var(--accent);
+            border: 1px solid rgba(16, 185, 129, 0.3);
+        }
+
+        .admin-toast.error {
+            background: var(--rose-dim);
+            color: var(--rose);
+            border: 1px solid rgba(239, 68, 68, 0.3);
+        }
+
+        /* 新增行 */
+        .add-row td {
+            color: var(--ink-faint);
+            cursor: pointer;
+        }
+
+        .add-row:hover td {
+            color: var(--accent);
+            background: rgba(16, 185, 129, 0.04);
+        }
+
+        /* 批次结果 */
+        .batch-result {
+            margin-top: 12px;
+            padding: 12px;
+            background: var(--bg-inset);
+            border-radius: 8px;
+            font-size: 12px;
+            display: none;
+        }
+
+        .batch-result.show {
+            display: block;
+        }
+
+        .batch-result .label {
+            color: var(--ink-faint);
+            margin-bottom: 4px;
+        }
+
+        .batch-result .value {
+            color: var(--accent);
+            font-family: var(--font-mono);
+        }
+    </style>
+</head>
+
+<body>
+    <!-- 浮动导航 -->
+    <nav class="nav-float" aria-label="监控导航">
+        <div class="nav-left">
+            <div class="status-dot" id="status-dot" role="status" aria-label="连接状态"></div>
+            <span class="nav-title">监控中心</span>
+        </div>
+        <div class="nav-right">
+            <div class="nav-pill">总用户 <span class="val" id="f-users">0</span></div>
+            <div class="nav-pill">今日活跃 <span class="val" id="f-today">0</span></div>
+            <div class="nav-pill">兑换码 <span class="val" id="f-tokens">0</span></div>
+            <div class="nav-pill">已完成 <span class="val" style="color:var(--accent)" id="f-completed">0</span></div>
+            <div class="nav-pill">失败 <span class="val" style="color:var(--rose)" id="f-failed">0</span></div>
+            <div class="nav-pill">取消 <span class="val" style="color:var(--amber)" id="f-cancelled">0</span></div>
+        </div>
+    </nav>
+
+    <!-- 断连提示 -->
+    <div class="disconnect-banner" id="disconnect-banner" role="alert" style="display:none;">
+        连接已断开，正在重连...
+    </div>
+
+    <!-- 主内容 -->
+    <main class="main">
+        <div class="bento">
+
+            <!-- ===== 核心指标（4列） ===== -->
+            <div class="card metric-grid reveal metric-card secondary col-3" data-delay="0">
+                <div class="metric-icon green">
+                    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor">
+                        <circle cx="12" cy="12" r="10" />
+                        <polyline points="12 6 12 12 16 14" />
+                    </svg>
+                </div>
+                <div class="metric-body">
+                    <div class="metric-label">运行时间</div>
+                    <div class="metric-value" id="m-uptime">--</div>
+                </div>
+            </div>
+
+            <div class="card metric-grid reveal metric-card primary col-3" data-delay="60">
+                <div class="metric-icon blue">
+                    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor">
+                        <path d="M16 21v-2a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4v2" />
+                        <circle cx="9" cy="7" r="4" />
+                        <path d="M22 21v-2a4 4 0 0 0-3-3.87" />
+                        <path d="M16 3.13a4 4 0 0 1 0 7.75" />
+                    </svg>
+                </div>
+                <div class="metric-body">
+                    <div class="metric-label">在线用户</div>
+                    <div class="metric-value" id="m-online">0</div>
+                </div>
+            </div>
+
+            <div class="card metric-grid reveal metric-card secondary col-3" data-delay="120">
+                <div class="metric-icon amber">
+                    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor">
+                        <polyline points="22 12 18 12 15 21 9 3 6 12 2 12" />
+                    </svg>
+                </div>
+                <div class="metric-body">
+                    <div class="metric-label">总请求数</div>
+                    <div class="metric-value" id="m-requests">0</div>
+                </div>
+            </div>
+
+            <div class="card metric-grid reveal metric-card secondary col-3" style="position: relative;"
+                data-delay="180">
+                <div class="metric-icon indigo">
+                    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor">
+                        <rect x="3" y="3" width="18" height="18" rx="2" />
+                        <circle cx="8.5" cy="8.5" r="1.5" />
+                        <polyline points="21 15 16 10 5 21" />
+                    </svg>
+                </div>
+                <div class="metric-body">
+                    <div class="metric-label">总生图数</div>
+                    <div class="metric-value" id="m-total-gen">0</div>
+                </div>
+                <button class="admin-btn" onclick="openAdminPanel()" title="兑换码管理">
+                    <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                        <circle cx="12" cy="12" r="3" />
+                        <path
+                            d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 1 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 1 1-2.83-2.83l.06-.06A1.65 1.65 0 0 0 4.68 15a1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 1 1 2.83-2.83l.06.06A1.65 1.65 0 0 0 9 4.68a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 1 1 2.83 2.83l-.06.06A1.65 1.65 0 0 0 19.4 9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z" />
+                    </svg>
+                </button>
+            </div>
+
+            <!-- ===== 生图耗时趋势（8列） ===== -->
+            <div class="card chart-card reveal col-8" data-delay="240">
+                <div class="chart-header">
+                    <div class="chart-title">生图耗时趋势</div>
+                    <div class="chart-stats">
+                        <div class="chart-stat">
+                            <div class="chart-stat-label">平均</div>
+                            <div class="chart-stat-value c-accent" id="img-avg">--</div>
+                        </div>
+                        <div class="chart-stat">
+                            <div class="chart-stat-label">上次</div>
+                            <div class="chart-stat-value c-amber" id="img-last">--</div>
+                        </div>
+                        <div class="chart-stat">
+                            <div class="chart-stat-label">最长</div>
+                            <div class="chart-stat-value c-rose" id="img-max">--</div>
+                        </div>
+                    </div>
+                </div>
+                <div class="chart-wrap">
+                    <canvas id="img-chart"></canvas>
+                </div>
+            </div>
+
+            <!-- ===== 搜索耗时趋势（4列） ===== -->
+            <div class="card chart-card reveal col-4" data-delay="300">
+                <div class="chart-header">
+                    <div class="chart-title">搜索耗时</div>
+                    <div class="chart-stats">
+                        <div class="chart-stat">
+                            <div class="chart-stat-label">平均</div>
+                            <div class="chart-stat-value c-accent" id="tag-avg">--</div>
+                        </div>
+                        <div class="chart-stat">
+                            <div class="chart-stat-label">上次</div>
+                            <div class="chart-stat-value c-amber" id="tag-last">--</div>
+                        </div>
+                    </div>
+                </div>
+                <div class="chart-wrap">
+                    <canvas id="tag-chart"></canvas>
+                </div>
+            </div>
+
+            <!-- ===== 当前运行任务（4列） ===== -->
+            <div class="card task-card card--self-start reveal col-4" data-delay="360">
+                <div class="task-active-indicator" id="task-indicator" style="display:none;">
+                    <div class="task-active-dot"></div>
+                    <span class="task-active-label">运行中</span>
+                </div>
+                <div class="card-head" id="task-head">
+                    <span class="card-title">当前任务</span>
+                </div>
+                <div id="current-task">
+                    <div class="task-empty">暂无运行任务</div>
+                </div>
+            </div>
+
+            <!-- ===== 排队任务（8列） ===== -->
+            <div class="card reveal col-8" data-delay="420">
+                <div class="card-head">
+                    <span class="card-title">排队任务</span>
+                    <span class="card-badge badge-amber" id="queue-count">0</span>
+                </div>
+                <div class="custom-scroll" style="overflow-x:auto; overflow-y:auto; flex:1; max-height:280px;">
+                    <table class="data-table" aria-label="排队任务列表">
+                        <thead>
+                            <tr>
+                                <th>任务ID</th>
+                                <th>用户</th>
+                                <th>模型</th>
+                                <th>等待</th>
+                                <th>提示词</th>
+                            </tr>
+                        </thead>
+                        <tbody id="queue-tbody">
+                            <tr>
+                                <td colspan="5" class="table-empty">队列为空</td>
+                            </tr>
+                        </tbody>
+                    </table>
+                </div>
+            </div>
+
+            <!-- ===== 用户栏（7列） ===== -->
+            <div class="card reveal col-7" data-delay="480">
+                <div class="card-head">
+                    <span class="card-title">用户</span>
+                    <span class="card-badge badge-indigo" id="user-count">0</span>
+                </div>
+                <div class="custom-scroll" style="overflow-y:auto; flex:1; max-height: 320px;">
+                    <div class="user-list" id="user-list">
+                        <div class="task-empty">加载中...</div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- ===== 模型使用排行（5列） ===== -->
+            <div class="card reveal col-5" data-delay="540">
+                <div class="card-head">
+                    <span class="card-title">模型使用排行</span>
+                    <span class="card-badge badge-green" id="model-count">0 模型</span>
+                </div>
+                <div class="bar-list custom-scroll" id="model-bars">
+                    <div class="task-empty">加载中...</div>
+                </div>
+            </div>
+
+            <!-- ===== 最近生图记录（7列） ===== -->
+            <div class="card card--self-start reveal col-7" data-delay="600">
+                <div class="card-head">
+                    <span class="card-title">最近生图记录</span>
+                    <span class="card-badge badge-blue" id="gen-today">今日 0</span>
+                </div>
+                <div class="custom-scroll" style="overflow-x:auto; overflow-y:auto; flex:1; max-height:280px;">
+                    <table class="data-table" aria-label="最近生图记录">
+                        <thead>
+                            <tr>
+                                <th>状态</th>
+                                <th>模型</th>
+                                <th>耗时</th>
+                                <th>用户</th>
+                                <th>时间</th>
+                            </tr>
+                        </thead>
+                        <tbody id="gen-tbody">
+                            <tr>
+                                <td colspan="5" class="table-empty">加载中...</td>
+                            </tr>
+                        </tbody>
+                    </table>
+                </div>
+            </div>
+
+            <!-- ===== LoRA使用排行（5列） ===== -->
+            <div class="card card--self-start reveal col-5" data-delay="660">
+                <div class="card-head">
+                    <span class="card-title">LoRA 排行</span>
+                </div>
+                <div class="bar-list custom-scroll" id="lora-bars"></div>
+            </div>
+
+            <!-- ===== 系统日志（12列） ===== -->
+            <div class="card logs-card reveal col-12" data-delay="720">
+                <div class="card-head">
+                    <span class="card-title">系统日志</span>
+                    <span class="card-badge badge-green" id="log-count">0</span>
+                </div>
+                <div class="logs-scroll custom-scroll" id="logs-box" role="log" aria-live="polite"></div>
+            </div>
+
+        </div>
+    </main>
+
+    <script>
+        // ===== 全局状态 =====
+        // 从 URL query 参数或 sessionStorage 获取 api_key，用于 WebSocket 和 API 认证
+        const _dashboardApiKey = new URLSearchParams(location.search).get('api_key') || sessionStorage.getItem('admin_apikey');
+        if (_dashboardApiKey) sessionStorage.setItem('admin_apikey', _dashboardApiKey);
+        const wsUrl = `${location.protocol === 'https:' ? 'wss:' : 'ws:'}//${location.host}/api/ws/dashboard?api_key=${_dashboardApiKey}`;
+        let socket;
+        let imgChart, tagChart;
+        let dbStats = null;
+
+        // ===== 入场动画 =====
+        function initRevealAnimations() {
+            const observer = new IntersectionObserver((entries) => {
+                entries.forEach(entry => {
+                    if (entry.isIntersecting) {
+                        const delay = parseInt(entry.target.dataset.delay || '0');
+                        setTimeout(() => entry.target.classList.add('visible'), delay);
+                        observer.unobserve(entry.target);
+                    }
+                });
+            }, { threshold: 0.1 });
+            document.querySelectorAll('.reveal').forEach(el => observer.observe(el));
+        }
+
+        // ===== Chart.js 初始化 =====
+        function initCharts() {
+            const commonOptions = {
+                responsive: true,
+                maintainAspectRatio: false,
+                animation: { duration: 600, easing: 'easeOutQuart' },
+                plugins: { legend: { display: false }, tooltip: { enabled: true, mode: 'index', intersect: false } },
+                scales: {
+                    x: { display: false },
+                    y: {
+                        display: true,
+                        grid: { color: 'rgba(255,255,255,0.03)', drawBorder: false },
+                        ticks: { color: '#64647a', font: { size: 10, family: 'Consolas, monospace' } },
+                        border: { display: false }
+                    }
+                },
+                elements: {
+                    point: { radius: 0, hoverRadius: 4 },
+                    line: { tension: 0.4, borderWidth: 2 }
+                },
+                interaction: { mode: 'nearest', axis: 'x', intersect: false }
+            };
+
+            const ctx1 = document.getElementById('img-chart').getContext('2d');
+            const grad1 = ctx1.createLinearGradient(0, 0, 0, 120);
+            grad1.addColorStop(0, 'rgba(16, 185, 129, 0.15)');
+            grad1.addColorStop(1, 'rgba(16, 185, 129, 0)');
+            imgChart = new Chart(ctx1, {
+                type: 'line',
+                data: { labels: [], datasets: [{ data: [], borderColor: '#10b981', backgroundColor: grad1, fill: true }] },
+                options: commonOptions
+            });
+
+            const ctx2 = document.getElementById('tag-chart').getContext('2d');
+            const grad2 = ctx2.createLinearGradient(0, 0, 0, 120);
+            grad2.addColorStop(0, 'rgba(59, 130, 246, 0.15)');
+            grad2.addColorStop(1, 'rgba(59, 130, 246, 0)');
+            tagChart = new Chart(ctx2, {
+                type: 'line',
+                data: { labels: [], datasets: [{ data: [], borderColor: '#3b82f6', backgroundColor: grad2, fill: true }] },
+                options: commonOptions
+            });
+        }
+
+        // ===== WebSocket 连接 =====
+        let reconnectDelay = 1000;  // 初始重连延迟降低到 1 秒
+        const maxDelay = 30000;     // 最大重连延迟降低到 30 秒
+        let reconnectTimer = null;
+        // 本地缓存：用于增量更新时合并数据
+        let localState = {
+            current_task: null,
+            task_list: [],
+            task_queue: [],
+            running_ids: [],
+            queue_running_count: 0,
+            queue_pending_count: 0,
+        };
+
+        function connect() {
+            if (reconnectTimer) {
+                clearTimeout(reconnectTimer);
+                reconnectTimer = null;
+            }
+            if (socket && (socket.readyState === WebSocket.OPEN || socket.readyState === WebSocket.CONNECTING)) {
+                return; // 防止重复连接
+            }
+            socket = new WebSocket(wsUrl);
+            // 事件驱动：根据消息 type 字段分发处理
+            socket.onmessage = (event) => {
+                try {
+                    const msg = JSON.parse(event.data);
+                    handleMessage(msg);
+                } catch (e) {
+                    console.warn('消息解析失败:', e);
+                }
+            };
+            socket.onclose = () => {
+                document.getElementById('status-dot').classList.add('offline');
+                document.getElementById('disconnect-banner').style.display = 'block';
+                reconnectTimer = setTimeout(connect, reconnectDelay);
+                reconnectDelay = Math.min(reconnectDelay * 2, maxDelay);
+            };
+            socket.onopen = () => {
+                document.getElementById('status-dot').classList.remove('offline');
+                document.getElementById('disconnect-banner').style.display = 'none';
+                reconnectDelay = 1000;
+            };
+            socket.onerror = () => socket.close();
+        }
+
+        // ===== 消息分发 =====
+        function handleMessage(msg) {
+            const { type, data } = msg;
+            switch (type) {
+                case 'init':
+                    handleInit(data);
+                    break;
+                case 'task_started':
+                    handleTaskStarted(data);
+                    break;
+                case 'task_completed':
+                    handleTaskCompleted(data);
+                    break;
+                case 'task_failed':
+                    handleTaskFailed(data);
+                    break;
+                case 'queue_update':
+                    handleQueueUpdate(data);
+                    break;
+                case 'log':
+                    handleLog(data);
+                    break;
+                case 'stats_update':
+                    handleStatsUpdate(data);
+                    break;
+                case 'heartbeat':
+                    handleHeartbeat(data);
+                    break;
+            }
+        }
+
+        // ===== 初始状态（连接后立即收到） =====
+        function handleInit(data) {
+            // 缓存本地状态，用于后续增量更新
+            localState.current_task = data.current_task || null;
+            localState.task_list = data.task_list || [];
+            localState.task_queue = data.task_queue || [];
+            localState.running_ids = data.running_ids || [];
+            localState.queue_running_count = data.queue_running_count || 0;
+            localState.queue_pending_count = data.queue_pending_count || 0;
+            // 用完整快照渲染整个界面
+            updateUI(data);
+        }
+
+        // ===== 任务开始 =====
+        function handleTaskStarted(data) {
+            localState.current_task = data;
+            renderCurrentTask(data);
+        }
+
+        // ===== 任务完成 =====
+        function handleTaskCompleted(data) {
+            localState.current_task = null;
+            renderCurrentTask(null);
+        }
+
+        // ===== 任务失败 =====
+        function handleTaskFailed(data) {
+            localState.current_task = null;
+            renderCurrentTask(null);
+        }
+
+        // ===== 队列更新 =====
+        function handleQueueUpdate(data) {
+            if (data.task_queue !== undefined) localState.task_queue = data.task_queue;
+            if (data.running_ids !== undefined) localState.running_ids = data.running_ids;
+            if (data.queue_running_count !== undefined) localState.queue_running_count = data.queue_running_count;
+            if (data.queue_pending_count !== undefined) localState.queue_pending_count = data.queue_pending_count;
+            if (data.task_list !== undefined) localState.task_list = data.task_list;
+            // 更新排队任务列表
+            renderQueueList(data.task_list || localState.task_list);
+            // 更新当前任务（队列变化时 current_task 可能已清空）
+            if (data.current_task !== undefined) {
+                localState.current_task = data.current_task || null;
+                renderCurrentTask(data.current_task);
+            }
+        }
+
+        // ===== 新日志（增量追加） =====
+        function handleLog(data) {
+            const logsBox = document.getElementById('logs-box');
+            const isBottom = logsBox.scrollHeight - logsBox.clientHeight <= logsBox.scrollTop + 10;
+            // 根据分类设置标签和样式
+            const cat = (data.category || 'SYSTEM').toLowerCase();
+            const tagLabels = { user: '用户', system: '系统', error: '错误' };
+            const tagLabel = tagLabels[cat] || '系统';
+            const line = document.createElement('div');
+            line.className = 'log-line';
+            line.innerHTML = `<span class="log-ts">[${esc(data.timestamp)}]</span><span class="log-tag ${cat}">${tagLabel}</span><span class="log-msg ${cat}">${esc(data.message)}</span>`;
+            logsBox.appendChild(line);
+            // 更新日志计数
+            const countEl = document.getElementById('log-count');
+            countEl.textContent = parseInt(countEl.textContent || 0) + 1;
+            // 如果用户在底部，自动滚动
+            if (isBottom) logsBox.scrollTop = logsBox.scrollHeight;
+        }
+
+        // ===== 统计更新 =====
+        function handleStatsUpdate(data) {
+            // 只更新传入的字段，未传入的保持不变
+            if (data.total_requests !== undefined) animateValue('m-requests', data.total_requests);
+            if (data.online !== undefined) animateValue('m-online', data.online);
+            if (data.uptime !== undefined) document.getElementById('m-uptime').textContent = data.uptime;
+            if (data.total_users !== undefined) document.getElementById('f-users').textContent = data.total_users;
+            if (data.users_today !== undefined) document.getElementById('f-today').textContent = data.users_today;
+            if (data.total_generated !== undefined) animateValue('m-total-gen', data.total_generated);
+
+            // 耗时统计
+            if (data.img_avg !== undefined) document.getElementById('img-avg').textContent = data.img_avg + 's';
+            if (data.img_last !== undefined) document.getElementById('img-last').textContent = data.img_last + 's';
+            if (data.img_max !== undefined) document.getElementById('img-max').textContent = data.img_max + 's';
+            if (data.tag_avg !== undefined) document.getElementById('tag-avg').textContent = data.tag_avg + 's';
+            if (data.tag_last !== undefined) document.getElementById('tag-last').textContent = data.tag_last + 's';
+
+            // 图表数据（仅在 stats_update 包含 img_times/tag_times 时更新）
+            if (data.img_times && imgChart) {
+                imgChart.data.labels = data.img_times.map((_, i) => i + 1);
+                imgChart.data.datasets[0].data = data.img_times;
+                imgChart.update('none');
+            }
+            if (data.tag_times && tagChart) {
+                tagChart.data.labels = data.tag_times.map((_, i) => i + 1);
+                tagChart.data.datasets[0].data = data.tag_times;
+                tagChart.update('none');
+            }
+        }
+
+        // ===== 心跳 =====
+        function handleHeartbeat(data) {
+            if (data.uptime) document.getElementById('m-uptime').textContent = data.uptime;
+            if (data.online !== undefined) animateValue('m-online', data.online);
+            // 心跳中包含 ComfyUI 队列状态
+            if (data.queue_running !== undefined) localState.queue_running_count = data.queue_running;
+            if (data.queue_pending !== undefined) localState.queue_pending_count = data.queue_pending;
+        }
+
+        // ===== 辅助渲染函数 =====
+        function renderCurrentTask(cur) {
+            const taskEl = document.getElementById('current-task');
+            const indicator = document.getElementById('task-indicator');
+            const taskCard = document.querySelector('.task-card');
+            if (cur && cur.custom_task_id) {
+                indicator.style.display = 'flex';
+                taskCard && taskCard.classList.add('has-task');
+                const elapsed = cur.start_time ? Math.round((Date.now() / 1000) - cur.start_time) : '--';
+                taskEl.innerHTML = `
+                    <div class="task-field"><span class="label">任务ID</span><span class="value">${esc(cur.custom_task_id)}</span></div>
+                    <div class="task-field"><span class="label">模型</span><span class="value">${esc(cur.model || '--')}</span></div>
+                    <div class="task-field"><span class="label">已运行</span><span class="value">${elapsed}s</span></div>
+                    <div class="task-field"><span class="label">用户</span><span class="value"><span class="uid-tag">#${cur.user_id || '--'}</span></span></div>
+                    <div class="task-field"><span class="label">提示词</span><span class="value" title="${esc(cur.prompt_preview || '')}">${esc(cur.prompt_preview || '--')}</span></div>
+                `;
+            } else {
+                indicator.style.display = 'none';
+                taskCard && taskCard.classList.remove('has-task');
+                taskEl.innerHTML = '<div class="task-empty">暂无运行任务</div>';
+            }
+        }
+
+        function renderQueueList(taskList) {
+            const tbody = document.getElementById('queue-tbody');
+            document.getElementById('queue-count').textContent = taskList.length;
+            if (taskList.length) {
+                const nowSec = Date.now() / 1000;
+                tbody.innerHTML = taskList.map(t => {
+                    const wait = Math.max(0, Math.round(nowSec - t.create_time));
+                    return `<tr>
+                        <td class="cell-id">${esc(t.custom_task_id)}</td>
+                        <td><span class="uid-tag">#${t.user_id || '--'}</span></td>
+                        <td class="cell-model">${esc(t.model)}</td>
+                        <td>${wait}s</td>
+                        <td class="cell-prompt" title="${esc(t.prompt_preview || '')}">${esc(t.prompt_preview)}</td>
+                    </tr>`;
+                }).join('');
+            } else {
+                tbody.innerHTML = '<tr><td colspan="5" class="table-empty">队列为空</td></tr>';
+            }
+        }
+
+        // ===== 加载数据库统计 =====
+        async function loadDbStats() {
+            try {
+                const resp = await fetch('/api/dashboard/stats', { headers: adminHeaders() });
+                if (resp.ok) {
+                    dbStats = await resp.json();
+                    renderDbStats(dbStats);
+                } else {
+                    console.warn('加载统计失败:', resp.status);
+                }
+            } catch (e) {
+                console.warn('加载统计异常:', e);
+            }
+        }
+
+        // ===== 加载用户列表 =====
+        async function loadUsers() {
+            try {
+                const resp = await fetch('/api/dashboard/users', { headers: adminHeaders() });
+                if (resp.ok) {
+                    const users = await resp.json();
+                    renderUsers(users);
+                } else {
+                    console.warn('加载用户列表失败:', resp.status);
+                }
+            } catch (e) {
+                console.warn('加载用户列表异常:', e);
+            }
+        }
+
+        // ===== 渲染用户列表 =====
+        function renderUsers(users) {
+            const list = document.getElementById('user-list');
+            document.getElementById('user-count').textContent = users.length;
+            if (users.length) {
+                // 判断在线状态：5分钟内有请求视为在线
+                const now = Date.now();
+                const onlineThreshold = 5 * 60 * 1000;
+                list.innerHTML = `
+                    <div class="user-header">
+                        <span></span>
+                        <span>用户</span>
+                        <span style="text-align:right">点数</span>
+                        <span style="text-align:right">消耗</span>
+                        <span style="text-align:right">生图</span>
+                        <span style="text-align:right">搜索</span>
+                        <span style="text-align:right">预设</span>
+                        <span style="text-align:right">上次请求</span>
+                    </div>
+                ` + users.map(u => {
+                    // 判断在线：last_request_at 在5分钟内
+                    const lastMs = u.last_request_at ? new Date(u.last_request_at + 'Z').getTime() : 0;
+                    const isOnline = (now - lastMs) < onlineThreshold;
+                    return `
+                    <div class="user-row">
+                        <div class="user-id-badge">${u.id}</div>
+                        <div class="user-info">
+                            <span class="user-online-dot ${isOnline ? 'online' : ''}"></span>
+                            <span class="user-cid" title="${esc(u.client_id)}">${esc(u.client_id.slice(0, 12))}</span>
+                        </div>
+                        <div class="user-stat">
+                            <span class="user-stat-val">${u.quota}</span>
+                        </div>
+                        <div class="user-stat">
+                            <span class="user-stat-val">${u.total_quota_used || 0}</span>
+                        </div>
+                        <div class="user-stat">
+                            <span class="user-stat-val">${u.total_generated}</span>
+                        </div>
+                        <div class="user-stat">
+                            <span class="user-stat-val">${u.total_searches || 0}</span>
+                        </div>
+                        <div class="user-stat">
+                            <span class="user-stat-val">${u.preset_count || 0}</span>
+                        </div>
+                        <div class="user-time">${formatTime(u.last_request_at)}</div>
+                    </div>
+                `;
+                }).join('');
+            } else {
+                list.innerHTML = '<div class="task-empty">暂无用户</div>';
+            }
+        }
+
+        // ===== 渲染数据库统计数据 =====
+        function renderDbStats(data) {
+            animateValue('m-total-gen', data.total_generated || 0);
+
+            // 模型排行
+            const modelBars = document.getElementById('model-bars');
+            const models = data.model_usage || [];
+            document.getElementById('model-count').textContent = models.length + ' 模型';
+            if (models.length) {
+                const maxCalls = Math.max(...models.map(m => m.total_calls), 1);
+                modelBars.innerHTML = models.map(m => `
+                    <div class="bar-item">
+                        <span class="bar-name" title="${esc(m.name)}">${esc(m.name)}</span>
+                        <div class="bar-track">
+                            <div class="bar-fill" style="transform: scaleX(${(m.total_calls / maxCalls).toFixed(3)})"></div>
+                        </div>
+                        <span class="bar-count">${m.total_calls}</span>
+                    </div>
+                `).join('');
+            } else {
+                modelBars.innerHTML = '<div class="task-empty">暂无数据</div>';
+            }
+
+            // LoRA 排行
+            const loraBars = document.getElementById('lora-bars');
+            const loras = data.lora_top || [];
+            if (loras.length) {
+                const maxCalls = Math.max(...loras.map(l => l.total_calls), 1);
+                loraBars.innerHTML = loras.map(l => `
+                    <div class="bar-item">
+                        <span class="bar-name" title="${esc(l.name)}">${esc(l.name)}</span>
+                        <div class="bar-track">
+                            <div class="bar-fill" style="transform: scaleX(${(l.total_calls / maxCalls).toFixed(3)})"></div>
+                        </div>
+                        <span class="bar-count">${l.total_calls}</span>
+                    </div>
+                `).join('');
+            } else {
+                loraBars.innerHTML = '<div class="task-empty">暂无数据</div>';
+            }
+
+            // 最近生图记录（用 user_id 替代 IP）
+            const genTbody = document.getElementById('gen-tbody');
+            const recent = data.recent_generations || [];
+            document.getElementById('gen-today').textContent = '今日 ' + (data.generated_today || 0);
+            if (recent.length) {
+                genTbody.innerHTML = recent.map(r => `
+                    <tr>
+                        <td><span class="status-tag sz-md ${esc(r.status)}">${esc(r.status)}</span></td>
+                        <td>${esc(r.ckpt_name || '--')}</td>
+                        <td>${r.duration != null ? r.duration.toFixed(1) + 's' : '--'}</td>
+                        <td><span class="uid-tag">#${r.user_id || '--'}</span></td>
+                        <td>${formatTime(r.created_at)}</td>
+                    </tr>
+                `).join('');
+            } else {
+                genTbody.innerHTML = '<tr><td colspan="5" class="table-empty">暂无记录</td></tr>';
+            }
+
+            // 底部统计
+            document.getElementById('f-users').textContent = data.total_users || 0;
+            document.getElementById('f-today').textContent = data.users_today || 0;
+            document.getElementById('f-tokens').textContent = (data.token_stats && data.token_stats.active_tokens) || 0;
+            const sc = data.generation_status_counts || {};
+            document.getElementById('f-completed').textContent = sc.completed || 0;
+            document.getElementById('f-failed').textContent = sc.failed || 0;
+            document.getElementById('f-cancelled').textContent = sc.cancelled || 0;
+        }
+
+        // ===== WebSocket 实时数据更新（完整快照，仅在 init 时调用） =====
+        function updateUI(data) {
+            // 核心指标
+            document.getElementById('m-uptime').textContent = data.uptime;
+            animateValue('m-online', data.online || 0);
+            animateValue('m-requests', data.total_requests || 0);
+
+            if (data.total_generated && !dbStats) {
+                document.getElementById('m-total-gen').textContent = data.total_generated;
+            }
+
+            // 耗时统计
+            document.getElementById('img-avg').textContent = (data.img_avg ?? '--') + 's';
+            document.getElementById('img-last').textContent = (data.img_last ?? '--') + 's';
+            document.getElementById('img-max').textContent = (data.img_max ?? '--') + 's';
+            document.getElementById('tag-avg').textContent = (data.tag_avg ?? '--') + 's';
+            document.getElementById('tag-last').textContent = (data.tag_last ?? '--') + 's';
+
+            // 图表
+            if (imgChart && data.img_times) {
+                imgChart.data.labels = data.img_times.map((_, i) => i + 1);
+                imgChart.data.datasets[0].data = data.img_times;
+                imgChart.update('none');
+            }
+            if (tagChart && data.tag_times) {
+                tagChart.data.labels = data.tag_times.map((_, i) => i + 1);
+                tagChart.data.datasets[0].data = data.tag_times;
+                tagChart.update('none');
+            }
+
+            // 当前任务
+            renderCurrentTask(data.current_task);
+
+            // 排队任务
+            renderQueueList(data.task_list || []);
+
+            // 日志（init 时全量渲染）
+            const logsBox = document.getElementById('logs-box');
+            const isBottom = logsBox.scrollHeight - logsBox.clientHeight <= logsBox.scrollTop + 10;
+            const logs = data.logs || [];
+            document.getElementById('log-count').textContent = logs.length;
+            logsBox.innerHTML = logs.map(log => {
+                const cat = (log.category || 'SYSTEM').toLowerCase();
+                const tagLabels = { user: '用户', system: '系统', error: '错误' };
+                const tagLabel = tagLabels[cat] || '系统';
+                return `<div class="log-line">
+                    <span class="log-ts">[${esc(log.timestamp)}]</span>
+                    <span class="log-tag ${cat}">${tagLabel}</span>
+                    <span class="log-msg ${cat}">${esc(log.message)}</span>
+                </div>`;
+            }).join('');
+            if (isBottom) logsBox.scrollTop = logsBox.scrollHeight;
+        }
+
+        // ===== 工具函数 =====
+        function esc(str) {
+            const d = document.createElement('div');
+            d.textContent = str;
+            return d.innerHTML;
+        }
+
+        function animateValue(elId, newVal) {
+            const el = document.getElementById(elId);
+            if (!el) return;
+            const current = parseInt(el.textContent) || 0;
+            if (current === newVal) return;
+            if (window.matchMedia('(prefers-reduced-motion: reduce)').matches) {
+                el.textContent = newVal;
+                return;
+            }
+            const duration = 400;
+            const start = performance.now();
+            function step(now) {
+                const progress = Math.min((now - start) / duration, 1);
+                const eased = 1 - Math.pow(1 - progress, 4);
+                el.textContent = Math.round(current + (newVal - current) * eased);
+                if (progress < 1) requestAnimationFrame(step);
+            }
+            requestAnimationFrame(step);
+        }
+
+        function formatTime(ts) {
+            if (!ts) return '--';
+            try {
+                // 后端已存储北京时间，直接显示，无需转换
+                const d = new Date(ts.replace(' ', 'T'));
+                if (isNaN(d.getTime())) return ts;
+                return d.toLocaleDateString('zh-CN', { year: 'numeric', month: '2-digit', day: '2-digit' })
+                    + ' ' + d.toLocaleTimeString('zh-CN', { hour: '2-digit', minute: '2-digit' });
+            } catch {
+                return ts;
+            }
+        }
+
+        // ===== 启动 =====
+        initRevealAnimations();
+        initCharts();
+        connect();
+        loadDbStats();
+        loadUsers();
+        // HTTP 轮询频率降低：数据库统计和用户列表变化频率低，
+        // 实时数据已通过 WebSocket 事件驱动推送，HTTP 仅作后备
+        setInterval(loadDbStats, 60000);
+        setInterval(loadUsers, 60000);
+
+        // ===== 处理页面可见性变化 (解决失去焦点后更新慢和重连慢的问题) =====
+        document.addEventListener("visibilitychange", () => {
+            if (document.visibilityState === 'visible') {
+                // 页面重新可见时，立即请求最新数据
+                loadDbStats();
+                loadUsers();
+
+                // 如果 WebSocket 断开，立即尝试重连
+                if (!socket || socket.readyState === WebSocket.CLOSED || socket.readyState === WebSocket.CLOSING) {
+                    reconnectDelay = 1000;
+                    connect();
+                }
+            }
+        });
+
+        // ===== 兑换码管理面板 =====
+        let adminCurrentTab = 0;
+
+        // 瀑布流状态
+        const scrollState = {
+            redeem: { page: 1, loading: false, hasMore: true, total: 0 },
+            token: { page: 1, loading: false, hasMore: true, total: 0 },
+        };
+
+        // 排序状态：多级排序数组，最多3级，每个 {field, order}
+        let tokenSortLevels = [{ field: 'created_at', order: 'desc' }];
+        // 兑换记录排序状态
+        let redeemSortLevels = [{ field: 'redeemed_at', order: 'desc' }];
+
+        function getApiKey() {
+            const el = document.getElementById('admin-apikey');
+            return (el && el.value) || sessionStorage.getItem('admin_apikey') || '';
+        }
+
+        function saveApiKey() {
+            const key = document.getElementById('admin-apikey').value;
+            if (key) sessionStorage.setItem('admin_apikey', key);
+            else sessionStorage.removeItem('admin_apikey');
+        }
+
+        function adminHeaders() {
+            return { 'Content-Type': 'application/json', 'X-API-Key': getApiKey() };
+        }
+
+        async function adminFetch(url, options = {}) {
+            options.headers = { ...adminHeaders(), ...(options.headers || {}) };
+            const res = await fetch(url, options);
+            if (res.status === 401) {
+                sessionStorage.removeItem('admin_apikey');
+                document.getElementById('admin-apikey').value = '';
+                showToast('API Key 无效，请重新输入', 'error');
+                throw new Error('Unauthorized');
+            }
+            return res;
+        }
+
+        function showToast(msg, type = 'success') {
+            const el = document.getElementById('admin-toast');
+            el.textContent = msg;
+            el.className = 'admin-toast ' + type + ' show';
+            setTimeout(() => { el.className = 'admin-toast'; }, 2500);
+        }
+
+        function openAdminPanel() {
+            const saved = sessionStorage.getItem('admin_apikey');
+            if (saved) document.getElementById('admin-apikey').value = saved;
+            document.getElementById('admin-overlay').classList.add('open');
+            // 阻止外部页面滚动
+            document.body.style.overflow = 'hidden';
+            // 首次打开时初始化滚动监听（DOM 元素在 script 标签之后，不能在脚本执行时绑定）
+            if (!window._scrollListenersSetup) {
+                window._scrollListenersSetup = true;
+                setupScrollListener('redeem-table-wrap', 'redeem');
+                setupScrollListener('token-table-wrap', 'token');
+                // 阻止模态窗口内滚动穿透到外部页面
+                document.querySelectorAll('.panel-table-wrap').forEach(wrap => {
+                    wrap.addEventListener('wheel', function (e) {
+                        const { scrollTop, scrollHeight, clientHeight } = wrap;
+                        const atTop = scrollTop <= 0;
+                        const atBottom = scrollTop + clientHeight >= scrollHeight;
+                        if ((e.deltaY < 0 && atTop) || (e.deltaY > 0 && atBottom)) {
+                            e.preventDefault();
+                        }
+                    }, { passive: false });
+                });
+            }
+            updateSortHeaders();
+            resetAndLoad('redeem');
+        }
+
+        function closeAdminPanel() {
+            document.getElementById('admin-overlay').classList.remove('open');
+            // 恢复外部页面滚动
+            document.body.style.overflow = '';
+        }
+
+        function switchTab(idx) {
+            adminCurrentTab = idx;
+            document.querySelectorAll('.admin-tab').forEach((t, i) => t.classList.toggle('active', i === idx));
+            document.querySelectorAll('.admin-panel').forEach((p, i) => p.classList.toggle('active', i === idx));
+            if (idx === 0) resetAndLoad('redeem');
+            else if (idx === 1) { loadBatchOptions().then(() => resetAndLoad('token')); }
+            else if (idx === 2) {
+                // 刷新批量生成日历组件的“可供选择的最小时间”
+                document.getElementById('batch-expires').min = getMinDatetimeLocal();
+                loadBatches();
+            }
+        }
+
+        // ===== 瀑布流核心 =====
+        function resetAndLoad(type) {
+            const state = scrollState[type];
+            state.page = 1;
+            state.hasMore = true;
+            state.total = 0;
+            // 清空表格
+            const tbodyId = type === 'redeem' ? 'redeem-tbody' : 'token-tbody';
+            document.getElementById(tbodyId).innerHTML = '';
+            // 隐藏加载器
+            const loaderId = type === 'redeem' ? 'redeem-loader' : 'token-loader';
+            document.getElementById(loaderId).classList.remove('show');
+            // 加载第一页
+            if (type === 'redeem') loadRedemptions();
+            else loadTokens();
+        }
+
+        function setupScrollListener(wrapId, type) {
+            const wrap = document.getElementById(wrapId);
+            wrap.addEventListener('scroll', () => {
+                const state = scrollState[type];
+                if (state.loading || !state.hasMore) return;
+                // 距底部不足 60px 时触发加载
+                if (wrap.scrollHeight - wrap.scrollTop - wrap.clientHeight < 60) {
+                    state.page++;
+                    if (type === 'redeem') loadRedemptions();
+                    else loadTokens();
+                }
+            });
+        }
+
+        // 检查滚动容器是否需要加载更多数据（内容不够填满时自动加载）
+        function checkScrollNeeded(type) {
+            const wrapId = type === 'redeem' ? 'redeem-table-wrap' : 'token-table-wrap';
+            const wrap = document.getElementById(wrapId);
+            const state = scrollState[type];
+            if (state.loading || !state.hasMore) return;
+            // 容器不可见时跳过（Tab 未激活时 clientHeight 为 0）
+            if (wrap.clientHeight === 0) return;
+            // 如果内容高度不够产生滚动条，自动加载下一页
+            if (wrap.scrollHeight <= wrap.clientHeight + 10) {
+                state.page++;
+                if (type === 'redeem') loadRedemptions();
+                else loadTokens();
+            }
+        }
+
+        // ===== 排序（多级 + 三态） =====
+        function handleSort(field) {
+            const idx = tokenSortLevels.findIndex(s => s.field === field);
+            if (idx !== -1) {
+                // 已存在：升序 → 降序，降序 → 移除
+                if (tokenSortLevels[idx].order === 'asc') {
+                    tokenSortLevels[idx].order = 'desc';
+                } else {
+                    tokenSortLevels.splice(idx, 1);
+                }
+            } else {
+                // 新增排序字段（最多3级，超出则移除最低优先级）
+                if (tokenSortLevels.length >= 3) {
+                    tokenSortLevels.shift();
+                }
+                tokenSortLevels.push({ field, order: 'asc' });
+            }
+            updateSortHeaders();
+            resetAndLoad('token');
+        }
+
+        function updateSortHeaders() {
+            document.querySelectorAll('.token-table th.sortable').forEach(th => {
+                const field = th.dataset.sort;
+                th.classList.remove('sort-asc', 'sort-desc');
+                const arrow = th.querySelector('.sort-arrow');
+                const idx = tokenSortLevels.findIndex(s => s.field === field);
+                if (idx !== -1) {
+                    const level = tokenSortLevels[idx];
+                    th.classList.add(level.order === 'asc' ? 'sort-asc' : 'sort-desc');
+                    // 显示优先级编号 + 方向箭头
+                    const num = idx + 1;
+                    const dir = level.order === 'asc' ? '▲' : '▼';
+                    arrow.textContent = num + dir;
+                } else {
+                    arrow.textContent = '▼';
+                }
+            });
+        }
+
+        // ===== 兑换记录排序 =====
+        function handleRedeemSort(field) {
+            const existing = redeemSortLevels.findIndex(s => s.field === field);
+            if (existing >= 0) {
+                const current = redeemSortLevels[existing].order;
+                if (current === 'asc') {
+                    redeemSortLevels[existing].order = 'desc';
+                } else {
+                    // desc -> 移除
+                    redeemSortLevels.splice(existing, 1);
+                }
+            } else {
+                // 新增排序字段（最多3级，超出则移除最低优先级）
+                if (redeemSortLevels.length >= 3) {
+                    redeemSortLevels.shift();
+                }
+                redeemSortLevels.push({ field, order: 'asc' });
+            }
+            updateRedeemSortHeaders();
+            resetAndLoad('redeem');
+        }
+
+        function updateRedeemSortHeaders() {
+            document.querySelectorAll('#admin-panel-0 th.sortable').forEach(th => {
+                const field = th.dataset.sort;
+                th.classList.remove('sort-asc', 'sort-desc');
+                const arrow = th.querySelector('.sort-arrow');
+                const idx = redeemSortLevels.findIndex(s => s.field === field);
+                if (idx !== -1) {
+                    const level = redeemSortLevels[idx];
+                    th.classList.add(level.order === 'asc' ? 'sort-asc' : 'sort-desc');
+                    const num = idx + 1;
+                    const dir = level.order === 'asc' ? '▲' : '▼';
+                    arrow.textContent = redeemSortLevels.length > 1 ? num + dir : dir;
+                } else {
+                    arrow.textContent = '▼';
+                }
+            });
+        }
+
+        // ===== Tab 0: 兑换记录（瀑布流 + 排序） =====
+        async function loadRedemptions() {
+            const state = scrollState.redeem;
+            if (state.loading || !state.hasMore) return;
+            state.loading = true;
+            document.getElementById('redeem-loader').classList.add('show');
+
+            const keyword = document.getElementById('redeem-search').value.trim();
+            try {
+                const params = new URLSearchParams({ page: state.page, page_size: 30 });
+                if (keyword) params.set('keyword', keyword);
+                // 排序参数
+                redeemSortLevels.forEach(sl => params.append('sort_levels', `${sl.field}:${sl.order}`));
+
+                const res = await adminFetch('/api/admin/redemptions?' + params);
+                const data = await res.json();
+                state.total = data.total;
+                const tbody = document.getElementById('redeem-tbody');
+
+                if (state.page === 1 && (!data.redemptions || data.redemptions.length === 0)) {
+                    tbody.innerHTML = '<tr><td colspan="7" style="text-align:center;color:var(--ink-faint);padding:20px;">暂无兑换记录</td></tr>';
+                    state.hasMore = false;
+                } else {
+                    const html = (data.redemptions || []).map(r => {
+                        const statusClass = r.status || 'active';
+                        const statusLabel = { active: '可用', disabled: '已禁用', expired: '已过期', exhausted: '已用尽' }[statusClass] || statusClass;
+                        const remaining = r.max_uses === -1 ? '∞' : r.remaining_uses;
+                        return `
+                            <tr>
+                                <td class="mono cell-truncate">${esc(r.token_code || '--')}</td>
+                                <td class="mono cell-truncate">${esc((r.client_id || '--').slice(0, 16))}</td>
+                                <td>${esc(r.user_id || '--')}</td>
+                                <td>${remaining}</td>
+                                <td><span class="status-tag sz-sm ${statusClass}">${statusLabel}</span></td>
+                                <td>${r.quota_granted || 0}</td>
+                                <td>${formatTime(r.redeemed_at)}</td>
+                            </tr>
+                        `;
+                    }).join('');
+                    tbody.insertAdjacentHTML('beforeend', html);
+                    // 判断是否还有更多
+                    const loaded = state.page * data.page_size;
+                    state.hasMore = loaded < data.total;
+                }
+            } catch (e) {
+                if (e.message !== 'Unauthorized') showToast('加载兑换记录失败', 'error');
+            } finally {
+                state.loading = false;
+                document.getElementById('redeem-loader').classList.remove('show');
+                if (state.hasMore) {
+                    setTimeout(() => checkScrollNeeded('redeem'), 50);
+                }
+            }
+        }
+
+        // ===== Tab 1: 兑换码管理（瀑布流 + 搜索 + 排序） =====
+        async function loadBatchOptions() {
+            try {
+                const res = await adminFetch('/api/admin/batches');
+                const data = await res.json();
+                const select = document.getElementById('token-batch-filter');
+                const current = select.value;
+                select.innerHTML = '<option value="">全部批次</option>';
+                (data.batches || []).forEach(b => {
+                    select.innerHTML += `<option value="${b.id}">${esc(b.batch_code)}</option>`;
+                });
+                select.value = current;
+            } catch (e) { }
+        }
+
+        async function loadTokens() {
+            const state = scrollState.token;
+            if (state.loading || !state.hasMore) return;
+            state.loading = true;
+            document.getElementById('token-loader').classList.add('show');
+
+            const batchId = document.getElementById('token-batch-filter').value;
+            const keyword = document.getElementById('token-search').value.trim();
+            try {
+                const params = new URLSearchParams({
+                    page: state.page, page_size: 30,
+                });
+                // 多级排序参数：sort_levels=field:order
+                tokenSortLevels.forEach(s => params.append('sort_levels', s.field + ':' + s.order));
+                if (batchId) params.set('batch_id', batchId);
+                if (keyword) params.set('keyword', keyword);
+                const res = await adminFetch('/api/admin/tokens?' + params);
+                const data = await res.json();
+                state.total = data.total;
+                const tbody = document.getElementById('token-tbody');
+
+                if (state.page === 1 && (!data.tokens || data.tokens.length === 0)) {
+                    tbody.innerHTML = '<tr><td colspan="10" style="text-align:center;color:var(--ink-faint);padding:20px;">暂无兑换码</td></tr>';
+                    state.hasMore = false;
+                } else {
+                    const html = (data.tokens || []).map(t => renderTokenRow(t, false)).join('');
+                    tbody.insertAdjacentHTML('beforeend', html);
+                    const loaded = state.page * data.page_size;
+                    state.hasMore = loaded < data.total;
+                }
+                // 首页时：在表格顶部插入 "+" 新增行
+                if (state.page === 1) {
+                    const addRow = tbody.querySelector('.add-row');
+                    if (addRow) addRow.remove();
+                    tbody.insertAdjacentHTML('afterbegin',
+                        `<tr class="add-row" onclick="startAddToken()"><td colspan="10" style="text-align:center;">+ 新增兑换码</td></tr>`);
+                }
+            } catch (e) {
+                if (e.message !== 'Unauthorized') showToast('加载兑换码失败', 'error');
+            } finally {
+                state.loading = false;
+                document.getElementById('token-loader').classList.remove('show');
+                // 加载完成后检查是否需要继续加载（内容不够填满容器时自动加载下一页）
+                if (state.hasMore) {
+                    setTimeout(() => checkScrollNeeded('token'), 50);
+                }
+            }
+        }
+
+        // 列顺序：0兑换码 1批次 2状态 3已用次数 4总次数 5额度 6描述 7过期时间 8创建时间 9操作
+        function renderTokenRow(t, editing) {
+            if (editing) {
+                // 编辑行记录原始的过期时间 (data-original-expires) 且为 datetime-local 添加 min 属性约束
+                return `<tr class="edit-row" data-id="${t.id}" data-original-expires="${t.expires_at || ''}">
+            <td class="mono">${esc(t.token_code)}</td>
+            <td class="mono" style="font-size:10px">${esc(t.batch_code || '-')}</td>
+            <td><select data-field="status">
+                <option value="active" ${t.status === 'active' ? 'selected' : ''}>活跃</option>
+                <option value="disabled" ${t.status === 'disabled' ? 'selected' : ''}>禁用</option>
+            </select></td>
+            <td>${t.redeem_count || 0}</td>
+            <td><input type="number" value="${t.max_uses === -1 ? -1 : t.max_uses}" min="-1" data-field="max_uses" style="width:50px" title="-1=无限"></td>
+            <td><input type="number" value="${t.quota_value}" min="1" data-field="quota_value" style="width:50px"></td>
+            <td><input type="text" value="${esc(t.description || '')}" placeholder="描述" data-field="description"></td>
+            <td><input type="datetime-local" value="${toLocalDatetimeString(t.expires_at)}" min="${getMinDatetimeLocal()}" data-field="expires_at"></td>
+            <td>${t.created_at ? formatTime(t.created_at) : '-'}</td>
+            <td>
+                <button class="admin-action-btn" onclick="saveTokenEdit(${t.id},this)">确认</button>
+                <button class="admin-action-btn" onclick="cancelEdit()">取消</button>
+            </td>
+        </tr>`;
+            }
+            const statusClass = t.status || 'active';
+            const statusLabel = { active: '可用', disabled: '已禁用', expired: '已过期', exhausted: '已用尽' }[statusClass] || statusClass;
+            // 正常行通过 data-expires-at 保存原始时间，防止编辑时丢失
+            return `<tr data-id="${t.id}" data-expires-at="${t.expires_at || ''}" ondblclick="startEditToken(${t.id})">
+        <td class="mono cell-truncate">${esc(t.token_code)}</td>
+        <td class="mono" style="font-size:10px">${esc(t.batch_code || '-')}</td>
+        <td><span class="status-tag sz-sm ${statusClass}">${statusLabel}</span></td>
+        <td>${t.redeem_count || 0}</td>
+        <td>${t.max_uses === -1 ? '∞' : t.max_uses}</td>
+        <td>${t.quota_value}</td>
+        <td>${esc(t.description || '-')}</td>
+        <td>${t.expires_at ? formatTime(t.expires_at) : '永久'}</td>
+        <td>${t.created_at ? formatTime(t.created_at) : '-'}</td>
+        <td>
+            <button class="admin-action-btn" onclick="toggleToken(${t.id})">${t.status === 'active' ? '禁用' : '启用'}</button>
+            <button class="admin-action-btn danger" onclick="deleteToken(${t.id})">删除</button>
+        </td>
+    </tr>`;
+        }
+
+        function cancelEdit() {
+            // 如果有编辑中的行，刷新整个列表以恢复原始数据
+            resetAndLoad('token');
+        }
+
+        // ESC 取消行内编辑
+        document.addEventListener('keydown', function (e) {
+            if (e.key === 'Escape') {
+                const editRow = document.querySelector('.edit-row:not(.new-token-row)');
+                if (editRow) cancelEdit();
+            }
+        });
+        function startEditToken(id) {
+            const row = document.querySelector(`tr[data-id="${id}"]`);
+            if (!row) return;
+            const cells = row.querySelectorAll('td');
+            // 列顺序：0兑换码 1批次 2状态 3已用次数 4总次数 5额度 6描述 7过期时间 8创建时间
+            const maxUsesText = cells[4].textContent.trim();
+            const maxUses = maxUsesText === '∞' ? -1 : (parseInt(maxUsesText) || 1);
+            const t = {
+                id,
+                token_code: cells[0].textContent.trim(),
+                batch_code: cells[1].textContent.trim(),
+                status: cells[2].querySelector('.status-tag')?.className.includes('active') ? 'active' : 'disabled',
+                redeem_count: parseInt(cells[3].textContent) || 0,
+                max_uses: maxUses,
+                quota_value: parseInt(cells[5].textContent) || 10,
+                description: cells[6].textContent === '-' ? '' : cells[6].textContent.trim(),
+                expires_at: row.dataset.expiresAt, // <-- 修复点：通过 dataset 获取原真实时间，不再被设为 ''
+                created_at: cells[8].textContent.trim(),
+            };
+            row.outerHTML = renderTokenRow(t, true);
+        }
+
+        function startAddToken() {
+            const tbody = document.getElementById('token-tbody');
+            const addRow = tbody.querySelector('.add-row');
+            if (!addRow) return;
+            const newRow = document.createElement('tr');
+            newRow.className = 'edit-row new-token-row';
+            newRow.innerHTML = `
+                <td class="mono" style="color:var(--ink-faint)">自动生成</td>
+                <td class="mono" style="font-size:10px;color:var(--ink-faint)">-</td>
+                <td><span class="status-tag sz-sm active">活跃</span></td>
+                <td style="color:var(--ink-faint)">0</td>
+                <td><input type="number" value="1" min="-1" data-field="max_uses" style="width:50px" title="-1=无限"></td>
+                <td><input type="number" value="10" min="1" data-field="quota_value" style="width:50px"></td>
+                <td><input type="text" placeholder="描述" data-field="description"></td>
+                <td><input type="datetime-local" min="${getMinDatetimeLocal()}" data-field="expires_at"></td>
+                <td style="color:var(--ink-faint)">-</td>
+                <td>
+                    <button class="admin-action-btn" onclick="submitNewToken(this)">确认</button>
+                    <button class="admin-action-btn" onclick="removeAddRow(this)">取消</button>
+                </td>
+            `;
+            addRow.after(newRow);
+        }
+
+        // 取消单个新增行（仅移除该行，不影响其他新增行）
+        function removeAddRow(btn) {
+            btn.closest('tr').remove();
+        }
+
+        // ===== 时间工具函数 =====
+        const _pad = n => String(n).padStart(2, '0');
+        function _fmtDT(d) { return `${d.getFullYear()}-${_pad(d.getMonth() + 1)}-${_pad(d.getDate())}T${_pad(d.getHours())}:${_pad(d.getMinutes())}`; }
+
+        function toBeijingTimeString(v) {
+            if (!v) return '';
+            const d = new Date(v);
+            return isNaN(d.getTime()) ? '' : _fmtDT(d) + ':00';
+        }
+        function toLocalDatetimeString(ts) {
+            if (!ts) return '';
+            const d = new Date(ts.replace(' ', 'T'));
+            return isNaN(d.getTime()) ? '' : _fmtDT(d);
+        }
+        function getMinDatetimeLocal() {
+            const d = new Date(); d.setMinutes(d.getMinutes() + 1);
+            return _fmtDT(d);
+        }
+
+        async function saveTokenEdit(id, btn) {
+            const row = btn.closest('tr');
+            const data = {};
+            row.querySelectorAll('[data-field]').forEach(el => {
+                if (el.dataset.field === 'expires_at') {
+                    data[el.dataset.field] = toBeijingTimeString(el.value);
+                } else {
+                    data[el.dataset.field] = el.value;
+                }
+            });
+            if (data.expires_at) {
+                const newExpTime = new Date(data.expires_at).getTime();
+                const originalExpires = row.dataset.originalExpires;
+                let oldExpTime = 0;
+                if (originalExpires) {
+                    oldExpTime = new Date(originalExpires.replace(' ', 'T')).getTime();
+                }
+
+                // 允许保留原来的已过期时间不变，但一旦修改必须至少晚于当前 1分钟
+                if (Math.abs(newExpTime - oldExpTime) > 1000 && newExpTime < Date.now() + 60000) {
+                    showToast('新设置的过期时间必须至少晚于当前时间 1 分钟', 'error');
+                    return;
+                }
+            }
+            try {
+                const res = await adminFetch(`/api/admin/tokens/${id}`, {
+                    method: 'PUT',
+                    body: JSON.stringify(data),
+                });
+                if (res.ok) {
+                    showToast('更新成功');
+                    resetAndLoad('token');
+                }
+                else { const err = await res.json(); showToast(err.detail || '更新失败', 'error'); }
+            } catch (e) { if (e.message !== 'Unauthorized') showToast('更新失败', 'error'); }
+        }
+
+        async function submitNewToken(btn) {
+            const row = btn.closest('tr');
+            const data = {};
+            row.querySelectorAll('[data-field]').forEach(el => {
+                if (el.dataset.field === 'expires_at') {
+                    data[el.dataset.field] = toBeijingTimeString(el.value);
+                } else {
+                    data[el.dataset.field] = el.value;
+                }
+            });
+            if (!data.quota_value) data.quota_value = 10;
+            if (data.expires_at && new Date(data.expires_at).getTime() < Date.now() + 60000) {
+                showToast('过期时间必须至少晚于当前时间 1 分钟', 'error');
+                return;
+            }
+            try {
+                const res = await adminFetch('/api/admin/tokens', {
+                    method: 'POST',
+                    body: JSON.stringify(data),
+                });
+                if (res.ok) {
+                    const result = await res.json();
+                    showToast('创建成功: ' + result.token_code);
+                    // 用返回数据替换当前占位行，不刷新整个列表，保留其他新增占位行
+                    const t = {
+                        id: result.id,
+                        token_code: result.token_code,
+                        batch_code: result.batch_code || '-',
+                        status: 'active',
+                        quota_value: parseInt(data.quota_value) || 10,
+                        redeem_count: 0,
+                        max_uses: parseInt(data.max_uses) || 1,
+                        expires_at: data.expires_at || null,
+                        created_at: result.created_at || null,
+                        description: data.description || '',
+                    };
+                    row.outerHTML = renderTokenRow(t, false);
+                } else {
+                    const err = await res.json();
+                    showToast(err.detail || '创建失败', 'error');
+                }
+            } catch (e) { if (e.message !== 'Unauthorized') showToast('创建失败', 'error'); }
+        }
+
+        // ===== 通用管理操作 =====
+        async function adminAction(url, method, msg, cb) {
+            try {
+                const res = await adminFetch(url, { method });
+                if (res.ok) { showToast(msg); cb && cb(); }
+                else { const e = await res.json(); showToast(e.detail || '操作失败', 'error'); }
+            } catch (e) { if (e.message !== 'Unauthorized') showToast('操作失败', 'error'); }
+        }
+
+        function toggleToken(id) {
+            adminAction(`/api/admin/tokens/${id}/toggle`, 'POST', '状态已切换', () => resetAndLoad('token'));
+        }
+
+        function deleteToken(id) {
+            if (!confirm('确定删除该兑换码？关联的兑换记录也将被删除。')) return;
+            adminAction(`/api/admin/tokens/${id}`, 'DELETE', '删除成功', () => resetAndLoad('token'));
+        }
+
+        // ===== Tab 2: 批量生成 =====
+        async function createBatch() {
+            const code = document.getElementById('batch-code').value.trim();
+            const count = parseInt(document.getElementById('batch-count').value) || 10;
+            const quota = parseInt(document.getElementById('batch-quota').value) || 10;
+            const maxUses = parseInt(document.getElementById('batch-maxuses').value) || 1;
+            const desc = document.getElementById('batch-desc').value.trim();
+            const expires = document.getElementById('batch-expires').value;
+
+            if (!code) { showToast('请输入批次号', 'error'); return; }
+
+            // 批量生成校验时间
+            if (expires && new Date(expires).getTime() < Date.now() + 60000) {
+                showToast('过期时间必须至少晚于当前时间 1 分钟', 'error');
+                return;
+            }
+
+            try {
+                const body = { batch_code: code, quota_value: quota, token_count: count, max_uses: maxUses };
+                if (desc) body.description = desc;
+                if (expires) body.expires_at = toBeijingTimeString(expires);
+
+                const res = await adminFetch('/api/admin/batches', {
+                    method: 'POST',
+                    body: JSON.stringify(body),
+                });
+                if (res.ok) {
+                    const data = await res.json();
+                    showToast(`成功生成 ${data.token_count} 个兑换码`);
+                    document.getElementById('batch-result').classList.add('show');
+                    document.getElementById('batch-result-text').textContent =
+                        `批次号: ${data.batch_code} | 数量: ${data.token_count} | 点数: ${quota}`;
+                    loadBatches();
+                } else {
+                    const err = await res.json();
+                    showToast(err.detail || '生成失败', 'error');
+                }
+            } catch (e) { if (e.message !== 'Unauthorized') showToast('生成失败', 'error'); }
+        }
+
+        async function loadBatches() {
+            try {
+                const res = await adminFetch('/api/admin/batches');
+                const data = await res.json();
+                const tbody = document.getElementById('batch-tbody');
+                if (!data.batches || data.batches.length === 0) {
+                    tbody.innerHTML = '<tr><td colspan="7" style="text-align:center;color:var(--ink-faint);padding:20px;">暂无批次</td></tr>';
+                } else {
+                    tbody.innerHTML = data.batches.map(b => {
+                        const statusClass = b.status || 'active';
+                        const statusLabel = { active: '活跃', disabled: '已禁用' }[statusClass] || statusClass;
+                        return `<tr>
+                            <td class="mono">${esc(b.batch_code)}</td>
+                            <td>${esc(b.description || '-')}</td>
+                            <td>${b.quota_value}</td>
+                            <td>${b.total_tokens || 0}</td>
+                            <td>${b.redeemed_count || 0}</td>
+                            <td><span class="status-tag sz-sm ${statusClass}">${statusLabel}</span></td>
+                            <td>${b.status === 'active' ? `<button class="admin-action-btn danger" onclick="disableBatch(${b.id})">禁用</button>` : '-'}</td>
+                        </tr>`;
+                    }).join('');
+                }
+            } catch (e) { }
+        }
+
+        function disableBatch(id) {
+            if (!confirm('确定禁用该批次？该批次下所有活跃兑换码将被禁用。')) return;
+            adminAction(`/api/admin/batches/${id}/disable`, 'POST', '批次已禁用', loadBatches);
+        }
+
+        // 滚动监听在 openAdminPanel 中延迟初始化（因为 DOM 元素在 script 之后）
+    </script>
+
+    <!-- ===== 兑换码管理面板 ===== -->
+    <div class="admin-overlay" id="admin-overlay" onclick="if(event.target===this)closeAdminPanel()">
+        <div class="admin-modal">
+            <div class="admin-header">
+                <h2>兑换码管理</h2>
+                <button class="admin-close" onclick="closeAdminPanel()">&times;</button>
+            </div>
+            <div class="admin-apikey-bar">
+                <label>API Key</label>
+                <input type="password" id="admin-apikey" placeholder="输入管理密钥" oninput="saveApiKey()">
+            </div>
+            <div class="admin-tabs">
+                <button class="admin-tab active" onclick="switchTab(0)">兑换记录</button>
+                <button class="admin-tab" onclick="switchTab(1)">兑换码管理</button>
+                <button class="admin-tab" onclick="switchTab(2)">批量生成</button>
+            </div>
+            <div class="admin-body">
+                <!-- Tab 0: 兑换记录 -->
+                <div class="admin-panel active" id="admin-panel-0">
+                    <div class="panel-toolbar">
+                        <div class="admin-toolbar">
+                            <input type="text" id="redeem-search" placeholder="搜索兑换码或用户..." style="width:240px"
+                                onkeydown="if(event.key==='Enter')resetAndLoad('redeem')">
+                            <button class="admin-action-btn" onclick="resetAndLoad('redeem')">搜索</button>
+                        </div>
+                    </div>
+                    <div class="panel-table-wrap custom-scroll" id="redeem-table-wrap">
+                        <table class="admin-table redeem-table">
+                            <thead>
+                                <tr>
+                                    <th class="sortable" data-sort="token_code"
+                                        onclick="handleRedeemSort('token_code')">兑换码<span class="sort-arrow">▼</span>
+                                    </th>
+                                    <th class="sortable" data-sort="client_id" onclick="handleRedeemSort('client_id')">
+                                        用户<span class="sort-arrow">▼</span></th>
+                                    <th class="sortable" data-sort="user_id" onclick="handleRedeemSort('user_id')">
+                                        用户ID<span class="sort-arrow">▼</span></th>
+                                    <th class="sortable" data-sort="remaining_uses"
+                                        onclick="handleRedeemSort('remaining_uses')">剩余次数<span
+                                            class="sort-arrow">▼</span></th>
+                                    <th class="sortable" data-sort="status" onclick="handleRedeemSort('status')">状态<span
+                                            class="sort-arrow">▼</span></th>
+                                    <th class="sortable" data-sort="quota_granted"
+                                        onclick="handleRedeemSort('quota_granted')">获得点数<span
+                                            class="sort-arrow">▼</span></th>
+                                    <th class="sortable" data-sort="redeemed_at"
+                                        onclick="handleRedeemSort('redeemed_at')">兑换时间<span class="sort-arrow">▼</span>
+                                    </th>
+                                </tr>
+                            </thead>
+                            <tbody id="redeem-tbody"></tbody>
+                        </table>
+                        <div class="scroll-loader" id="redeem-loader"><span class="spinner"></span>加载中...</div>
+                    </div>
+                </div>
+
+                <!-- Tab 1: 兑换码管理 -->
+                <div class="admin-panel" id="admin-panel-1">
+                    <div class="panel-toolbar">
+                        <div class="admin-toolbar">
+                            <input type="text" id="token-search" placeholder="搜索兑换码/描述/批次..." style="width:200px"
+                                onkeydown="if(event.key==='Enter')resetAndLoad('token')">
+                            <select id="token-batch-filter" onchange="resetAndLoad('token')">
+                                <option value="">全部批次</option>
+                            </select>
+                            <button class="admin-action-btn" onclick="resetAndLoad('token')">刷新</button>
+                        </div>
+                    </div>
+                    <div class="panel-table-wrap custom-scroll" id="token-table-wrap">
+                        <table class="admin-table token-table">
+                            <thead>
+                                <tr>
+                                    <th class="sortable" data-sort="token_code" onclick="handleSort('token_code')">
+                                        兑换码<span class="sort-arrow">▼</span></th>
+                                    <th class="sortable" data-sort="batch_code" onclick="handleSort('batch_code')">
+                                        批次<span class="sort-arrow">▼</span></th>
+                                    <th class="sortable" data-sort="status" onclick="handleSort('status')">状态<span
+                                            class="sort-arrow">▼</span></th>
+                                    <th class="sortable" data-sort="redeem_count" onclick="handleSort('redeem_count')">
+                                        已用次数<span class="sort-arrow">▼</span></th>
+                                    <th class="sortable" data-sort="max_uses" onclick="handleSort('max_uses')">总次数<span
+                                            class="sort-arrow">▼</span></th>
+                                    <th class="sortable" data-sort="quota_value" onclick="handleSort('quota_value')">
+                                        额度<span class="sort-arrow">▼</span></th>
+                                    <th class="sortable" data-sort="description" onclick="handleSort('description')">
+                                        描述<span class="sort-arrow">▼</span></th>
+                                    <th class="sortable" data-sort="expires_at" onclick="handleSort('expires_at')">
+                                        过期时间<span class="sort-arrow">▼</span></th>
+                                    <th class="sortable" data-sort="created_at" onclick="handleSort('created_at')">
+                                        创建时间<span class="sort-arrow">▼</span></th>
+                                    <th>操作</th>
+                                </tr>
+                            </thead>
+                            <tbody id="token-tbody"></tbody>
+                        </table>
+                        <div class="scroll-loader" id="token-loader"><span class="spinner"></span>加载中...</div>
+                    </div>
+                </div>
+
+                <!-- Tab 2: 批量生成 -->
+                <div class="admin-panel" id="admin-panel-2">
+                    <div class="panel-table-wrap" style="padding-top:12px;">
+                        <div class="admin-form" id="batch-form">
+                            <div>
+                                <label>批次号</label>
+                                <input type="text" id="batch-code" placeholder="如 SPRING2026">
+                            </div>
+                            <div>
+                                <label>数量</label>
+                                <input type="number" id="batch-count" value="10" min="1" max="1000">
+                            </div>
+                            <div>
+                                <label>点数</label>
+                                <input type="number" id="batch-quota" value="10" min="1">
+                            </div>
+                            <div>
+                                <label>每码可用次数</label>
+                                <input type="number" id="batch-maxuses" value="1" min="-1" title="-1=无限">
+                            </div>
+                            <div>
+                                <label>描述（可选）</label>
+                                <input type="text" id="batch-desc" placeholder="如 春节活动-100点">
+                            </div>
+                            <div>
+                                <label>过期时间（可选）</label>
+                                <input type="datetime-local" id="batch-expires">
+                            </div>
+                            <div class="full">
+                                <button class="submit-btn" onclick="createBatch()">生成兑换码</button>
+                            </div>
+                        </div>
+                        <div class="batch-result" id="batch-result">
+                            <div class="label">生成结果</div>
+                            <div class="value" id="batch-result-text"></div>
+                        </div>
+                        <h3
+                            style="font-size:13px;color:var(--ink-muted);margin:20px 0 8px;padding-top:12px;border-top:1px solid rgba(255,255,255,0.06);">
+                            批次列表</h3>
+                        <table class="admin-table batch-table">
+                            <thead>
+                                <tr>
+                                    <th>批次号</th>
+                                    <th>描述</th>
+                                    <th style="text-align:center">点数</th>
+                                    <th style="text-align:center">码数</th>
+                                    <th style="text-align:center">已兑换</th>
+                                    <th style="text-align:center">状态</th>
+                                    <th>操作</th>
+                                </tr>
+                            </thead>
+                            <tbody id="batch-tbody"></tbody>
+                        </table>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Toast -->
+    <div class="admin-toast" id="admin-toast"></div>
+
+</body>
+
+</html>
