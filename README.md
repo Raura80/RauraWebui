@@ -3,7 +3,7 @@
 基于 ComfyUI 的 AI 动漫图像生成 Web 应用，提供从标签辅助、模型配置到一键出图的完整创作体验。
 
 ---
-### 体验地址 https://webui.raura.top/
+### 体验地址 https://raura.top/
 
 ## 页面预览
 
